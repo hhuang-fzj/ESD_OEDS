@@ -12,17 +12,16 @@ https://www.bundesnetzagentur.de/SharedDocs/Downloads/DE/Sachgebiete/Energie/Unt
 import logging
 
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import text
 
-from common.base_crawler import create_schema_only, set_metadata_only
-from common.config import db_uri
+from common.base_crawler import DownloadOnceCrawler, load_config
 
 log = logging.getLogger("ladesaeulenregister")
 log.setLevel(logging.INFO)
 
 metadata_info = {
     "schema_name": "ladesaeulenregister",
-    "data_date": "2014-02-28",
+    "data_date": "2025-07-18",
     "data_source": "https://www.bundesnetzagentur.de/DE/Fachthemen/ElektrizitaetundGas/E-Mobilitaet/Ladesaeulenkarte/start.html",
     "license": "CC-BY-4.0",
     "description": "Charging stations for EV. Coordinate referenced power usage of individual chargers.",
@@ -31,33 +30,30 @@ metadata_info = {
     "temporal_end": None,
 }
 
+class LadesaeulenregisterCrawler(DownloadOnceCrawler):
+    def structure_exists(self) -> bool:
+        try:
+            with self.engine.connect() as conn:
+                return conn.execute(text("SELECT 1 from ladesaeulenregister limit 1")).scalar() == 1
+        except Exception as e:
+            return False
 
-def main(db_uri):
-    engine = create_engine(db_uri)
+    def crawl_structural(self, recreate: bool=False):
+        if not self.structure_exists() or recreate:
+            log.info("Crawling Ladesäulenregister")
+            url = "https://data.bundesnetzagentur.de/Bundesnetzagentur/DE/Fachthemen/ElektrizitaetundGas/E-Mobilitaet/Ladesaeulenregister_BNetzA_2025-07-18.csv"
+            df = pd.read_csv(url, skiprows=10, delimiter=";", encoding="iso-8859-1", index_col=0, decimal=",", low_memory=False)
 
-    create_schema_only(engine, "ladesaeulenregister")
-
-    url = "https://data.bundesnetzagentur.de/Bundesnetzagentur/DE/Fachthemen/ElektrizitaetundGas/E-Mobilitaet/Ladesaeulenregister_BNetzA_2025-07-18.csv"
-    df = pd.read_csv(url, skiprows=10, delimiter=";")
-    # there were two empty lines at the end
-    df = df.dropna(how="all")
-    # the PLZ should not be interpreted as a float but be integer
-    df["Postleitzahl"] = pd.to_numeric(df["Postleitzahl"], downcast="integer")
-    # some entries have whitespace before and after
-    df["Längengrad"] = df["Längengrad"].str.replace(",", ".").str.strip()
-    df["Längengrad"] = pd.to_numeric(df["Längengrad"])
-    # some entries also have an extra delimiter at the end
-    df["Breitengrad"] = df["Breitengrad"].str.replace(",", ".").str.strip(" .")
-    df["Breitengrad"] = pd.to_numeric(df["Breitengrad"])
-    # now conversion works fine
-
-    with engine.begin() as conn:
-        df.to_sql("ladesaeulenregister", conn, if_exists="replace")
-    log.info("Finished writing Ladesäulenregister to Database")
-
-    set_metadata_only(engine, metadata_info)
+            with self.engine.begin() as conn:
+                df.to_sql("ladesaeulenregister", conn, if_exists="replace")
+            log.info("Finished writing Ladesäulenregister to Database")
 
 
 if __name__ == "__main__":
     logging.basicConfig()
-    main(db_uri("ladesaeulenregister"))
+    import yaml
+    from pathlib import Path
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    mastr = LadesaeulenregisterCrawler("ladesaeulenregister", config=config)
+    mastr.crawl_structural(recreate=False)
+
