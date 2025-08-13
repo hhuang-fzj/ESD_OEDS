@@ -1,14 +1,35 @@
 from datetime import date
 
 from sqlalchemy import create_engine, text
+from datetime import datetime, timedelta
+from typing import TypedDict
 
-from .config import db_uri
+import yaml
 
+
+class CrawlerConfig(TypedDict):
+    db_uri: str
+    entsoe_api_key: str
+    regelleistung_api_key: str
+    gie_api_key: str
+    ipnt_client_id: str
+    ipnt_client_secret: str
+
+
+def load_config(config_path: str = "config.yml") -> CrawlerConfig:
+    config = yaml.safe_load(open(config_path))
+    return config
 
 class BaseCrawler:
-    def __init__(self, schema_name: str):
-        self.engine = create_engine(db_uri(schema_name))
+    def __init__(self, schema_name: str, config: CrawlerConfig):
+        self.config = config
+        if "db_uri" not in config.keys():
+            raise ValueError("Please provide a 'db_uri' in the config")
+    
+        self.config["db_uri"] = config["db_uri"].format(DBNAME=schema_name)
+        self.engine = create_engine(self.config["db_uri"])
         self.create_schema(schema_name)
+        
 
     def create_schema(self, schema_name: str) -> str:
         create_schema_only(self.engine, schema_name)
@@ -16,6 +37,83 @@ class BaseCrawler:
     def set_metadata(self, metadata_info: dict[str, str]) -> None:
         set_metadata_only(self.engine, metadata_info)
 
+
+class DownloadOnceCrawler(BaseCrawler):
+    def structure_exists(self) -> bool:
+        return False
+    
+    def crawl_structure(self):
+        raise NotImplementedError()
+    
+    def crawl_structural(self, recreate: bool=False):
+
+        if not self.structure_exists() or recreate:
+            self.crawl_structure()
+
+
+class ContinuousCrawler(BaseCrawler):
+    """Ideomatic Crawler for temporal data, served for continuous execution of the crawler.
+
+    The idea is to take care of conditional constraints (like end date must be at hour 0) in the crawler.
+    All crawlers should fit to this interface, to handle the start and end date well, and also handle download of data prior to the existing data, if exists.
+    
+    All temporal data should be in UTC.
+
+
+    Args:
+        BaseCrawler (_type_): _description_
+    """
+    FIRST_DATA=datetime(2019,1,1)
+    TIMEDELTA=timedelta(days=-7)
+    URL="https://google.de"
+
+    def get_latest_data(self) -> datetime:
+        raise NotImplementedError()
+
+    def get_first_data(self) -> datetime:
+        raise NotImplementedError()
+
+    def create_hypertable_if_not_exists(self) -> None:
+        pass
+
+    def crawl_from_to(self, begin: datetime, end: datetime):
+        """Crawls data from begin (inclusive) until end (exclusive)
+
+        Args:
+            begin (datetime): included begin datetime from which to crawl
+            end (datetime): exclusive end datetime until which to crawl
+        """
+        pass
+
+    def crawl_temporal(self, begin: datetime | None = None, end: datetime | None = None):
+        latest = self.get_latest_data()
+
+        if begin:
+            first = self.get_first_data()
+            if begin < first:
+                self.crawl_from_to(begin, first)
+        if not end:
+            end = datetime.now()
+        
+        if latest < end:
+            self.crawl_from_to(latest, end)
+        self.create_hypertable_if_not_exists()
+
+# ich habe bis 13 Uhr (exklusive)
+
+# ich komme um 13:30 -> ich runde ab auf 13 Uhr und crawle nichts
+# ich komme um  14 Uhr -> ich crawle eine Stunde (bis 14 Uhr (exklusive))
+
+#  13 Uhr ------------- 14 Uhr --------------- 15 Uhr
+
+
+# Daten von 14 bis 15 Uhr
+
+# Ich komme und möchte von 10-17 Uhr:
+
+# -> first data = 14, last_data = 15 Uhr
+# -> crawle von 10-14 Uhr (exklusive Ende)
+# -> crawle ich von 15 bis 17 Uhr (exklusive Ende)
 
 def create_schema_only(engine, schema_name: str) -> None:
     with engine.begin() as conn:
