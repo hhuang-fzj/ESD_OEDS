@@ -1,13 +1,14 @@
-import os.path as osp
+import logging
 import zipfile
 from io import BytesIO
 
 import pandas as pd
 import requests
-from sqlalchemy import create_engine
+from sqlalchemy import text
 
-from common.base_crawler import create_schema_only, set_metadata_only
-from common.config import db_uri
+from common.base_crawler import DownloadOnceCrawler, load_config
+
+log = logging.getLogger(__name__)
 
 metadata_info = {
     "schema_name": "ninja",
@@ -20,56 +21,71 @@ metadata_info = {
     "temporal_end": "2016-12-31 23:00:00",
 }
 
+WIND_URL = "https://www.renewables.ninja/downloads/ninja_europe_wind_v1.1.zip"
+SOLAR_URL = "https://www.renewables.ninja/downloads/ninja_europe_pv_v1.1.zip"
 
-def download_and_extract(url, extract_to):
-    response = requests.get(url)
-    with zipfile.ZipFile(BytesIO(response.content)) as z_file:
-        z_file.extractall(extract_to)
+class NinjaCrawler(DownloadOnceCrawler):
+    def structure_exists(self) -> bool:
+        try:
+            with self.engine.connect() as conn:
+                return conn.execute(text("SELECT 1 from capacity_wind_off limit 1")).scalar() == 1
+        except Exception as e:
+            return False
+        
+    def write_wind_capacity_factors(self, url):
+        log.info("Crawling renewables.ninja wind data")
+        response = requests.get(url)
+        with zipfile.ZipFile(BytesIO(response.content)) as z_file:
+            with z_file.open("ninja_wind_europe_v1.1_current_on-offshore.csv") as ninja_wind_file:
+                data = pd.read_csv(ninja_wind_file, index_col=0)
+                data.index = pd.to_datetime(data.index)
+                onshore = {
+                    col.split("_")[0].lower(): data[col].values
+                    for col in data.columns
+                    if "ON" in col
+                }
+                with self.engine.begin() as conn:
+                    df_on = pd.DataFrame(data=onshore, index=data.index)
+                    df_on.to_sql("capacity_wind_on", conn, if_exists="replace")
+                    offshore = {
+                        col.split("_")[0].lower(): data[col].values
+                        for col in data.columns
+                        if "OFF" in col
+                    }
+                    df_off = pd.DataFrame(data=offshore, index=data.index)
+                    
+                    df_off.to_sql("capacity_wind_off", conn, if_exists="replace")
 
 
-def write_wind_capacity_factors(engine, wind_path):
-    data = pd.read_csv(wind_path, index_col=0)
-    data.index = pd.to_datetime(data.index)
-    onshore = {
-        col.split("_")[0].lower(): data[col].values
-        for col in data.columns
-        if "ON" in col
-    }
-    df_on = pd.DataFrame(data=onshore, index=data.index)
-    df_on.to_sql("capacity_wind_on", engine, if_exists="replace")
-    offshore = {
-        col.split("_")[0].lower(): data[col].values
-        for col in data.columns
-        if "OFF" in col
-    }
-    df_off = pd.DataFrame(data=offshore, index=data.index)
-    df_off.to_sql("capacity_wind_off", engine, if_exists="replace")
+    def write_solar_capacity_factors(self, url):
+        log.info("Crawling renewables.ninja solar data")
+        response = requests.get(url)
+        with zipfile.ZipFile(BytesIO(response.content)) as z_file:
+            with z_file.open("ninja_pv_europe_v1.1_merra2.csv") as ninja_solar_file:
+                data = pd.read_csv(ninja_solar_file, index_col=0)
+                data.index = pd.to_datetime(data.index)
+                data.columns = [col.lower() for col in data.columns]
+                with self.engine.begin() as conn:
+                    data.to_sql("capacity_solar_merra2", conn, if_exists="replace")
 
+    def create_hypertable_if_not_exists(self) -> None:
+        self.create_single_hypertable_if_not_exists("capacity_wind_on", "time")
+        self.create_single_hypertable_if_not_exists("capacity_wind_off", "time")
+        self.create_single_hypertable_if_not_exists("capacity_solar_merra2", "time")
 
-def write_solar_capacity_factors(engine, solar_path):
-    data = pd.read_csv(solar_path, index_col=0)
-    data.index = pd.to_datetime(data.index)
-    data.columns = [col.lower() for col in data.columns]
-    data.to_sql("capacity_solar_merra2", engine, if_exists="replace")
-
-
-def main(schema_name):
-    engine = create_engine(db_uri(schema_name))
-
-    create_schema_only(engine, schema_name)
-    base_path = osp.join(osp.dirname(__file__), "data")
-    wind_url = "https://www.renewables.ninja/downloads/ninja_europe_wind_v1.1.zip"
-    solar_url = "https://www.renewables.ninja/downloads/ninja_europe_pv_v1.1.zip"
-
-    download_and_extract(wind_url, base_path)
-    download_and_extract(solar_url, base_path)
-
-    wind_path = osp.join(base_path, "ninja_wind_europe_v1.1_current_on-offshore.csv")
-    solar_path = osp.join(base_path, "ninja_pv_europe_v1.1_merra2.csv")
-    write_wind_capacity_factors(engine, wind_path)
-    write_solar_capacity_factors(engine, solar_path)
-    set_metadata_only(engine, metadata_info)
-
+    def crawl_structural(self, recreate: bool=False):
+        if not self.structure_exists() or recreate:
+            log.info("Crawling renewables.ninja data")
+            self.write_wind_capacity_factors(WIND_URL)
+            self.write_solar_capacity_factors(SOLAR_URL)
+            log.info("Finished writing renewables.ninja data to Database")
+        self.create_hypertable_if_not_exists()
 
 if __name__ == "__main__":
-    main("ninja")
+    logging.basicConfig(level=logging.INFO)
+    import yaml
+    from pathlib import Path
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    mastr = NinjaCrawler("ninja", config=config)
+    mastr.crawl_structural(recreate=False)
+

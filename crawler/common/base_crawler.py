@@ -42,6 +42,19 @@ class BaseCrawler:
     def set_metadata(self, metadata_info: dict[str, str]) -> None:
         set_metadata_only(self.engine, metadata_info)
 
+    def create_hypertable_if_not_exists(self) -> None:
+        pass
+
+    def create_single_hypertable_if_not_exists(self, table_name: str, time_column: str) -> None:
+        try:
+            query_create_hypertable = text(
+                f"SELECT public.create_hypertable('{table_name}', '{time_column}', if_not_exists => TRUE, migrate_data => TRUE);"
+            )
+            with self.engine.begin() as conn:
+                conn.execute(query_create_hypertable)
+            logger.info(f"created hypertable {table_name} if not exists")
+        except Exception as e:
+            logger.error(f"could not create hypertable: {e}")
 
 class DownloadOnceCrawler(BaseCrawler):
     def structure_exists(self) -> bool:
@@ -50,6 +63,7 @@ class DownloadOnceCrawler(BaseCrawler):
     def crawl_structural(self, recreate: bool=False):
         if not self.structure_exists() or recreate:
             raise NotImplementedError()
+        self.create_hypertable_if_not_exists()
 
 
 class ContinuousCrawler(BaseCrawler):
@@ -73,20 +87,6 @@ class ContinuousCrawler(BaseCrawler):
 
     def get_first_data(self) -> datetime:
         raise NotImplementedError()
-
-    def create_hypertable_if_not_exists(self) -> None:
-        pass
-
-    def create_single_hypertable_if_not_exists(self, table_name: str, time_column: str) -> None:
-        try:
-            query_create_hypertable = text(
-                f"SELECT public.create_hypertable('{table_name}', '{time_column}', if_not_exists => TRUE, migrate_data => TRUE);"
-            )
-            with self.engine.begin() as conn:
-                conn.execute(query_create_hypertable)
-            logger.info(f"created hypertable {table_name} if not exists")
-        except Exception as e:
-            logger.error(f"could not create hypertable: {e}")
 
     def crawl_from_to(self, begin: datetime, end: datetime):
         """Crawls data from begin (inclusive) until end (exclusive)
