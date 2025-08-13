@@ -7,15 +7,15 @@ This crawler downloads all the generation data of germany from the smard portal 
 It contains mostly data for Germany which is also availble in the ENTSO-E transparency platform but under a CC open license.
 """
 
-import json
+import io
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pandas as pd
 import requests
 from sqlalchemy import text
 
-from common.base_crawler import BaseCrawler
+from common.base_crawler import ContinuousCrawler, load_config
 
 log = logging.getLogger("smard")
 default_start_date = "2024-06-02 22:00:00"  # "2023-11-26 22:45:00"
@@ -28,171 +28,129 @@ metadata_info = {
     "license": "CC-BY-4.0",
     "description": "Open access ENTSOE  Germany. Production of energy by good and timestamp",
     "contact": "",
-    "temporal_start": "2023-01-01 23:00:00",
+    "temporal_start": "2015-01-01 00:00:00",
     "temporal_end": "2024-06-09 21:45:00",
     "concave_hull_geometry": None,
 }
 
+MODULE_IDS={}
+MODULE_IDS["generation"] = [1001224,1004066,1004067,1004068,1001223,1004069,1004071,1004070,1001226,1001228,1001227,1001225]
+MODULE_IDS["market"] = [8004169,8004170,8000251,8005078,8000252,8000253,8000254,8000255,8000256,8000257,8000258,8000259,8000260,8000261,8000262,8004996,8004997]
+MODULE_IDS["power_flow"] = [31004963,31004736,31004737,31004740,31004741,31004988,31004990,31004992,31004994,31004738,31004742,31004743,31004744,31004880,31004881,31004882,31004883,31004884,31004885,31004886,31004887,31004888,31004739]
+MODULE_IDS["allocation"] = [22004629,22004722,22004724,22004404,22004409,22004545,22004546,22004548,22004550,22004551,22004552,22004405,22004547,22004403,22004406,22004407,22004408,22004410,22004412,22004549,22004553,22004998,22004712]
+MODULE_IDS["forecast_day_ahead"] = [2000122,2005097,2000715,2003791,2000123,2000125]
+MODULE_IDS["consumption"] = [5000410,5004387,5005140,5004359]
+MODULE_IDS["frequency_reserve"] = [15004383,15004384,15004382,15004390]
 
-class SmardCrawler(BaseCrawler):
-    def __init__(self, schema_name):
-        super().__init__(schema_name)
+TEMPORAL_START = datetime(2015, 1, 1)
+MAX_DELTA = timedelta(weeks=52)
+OFFSET_FROM_NOW = timedelta(hours=-6)
+SMARD_URL = "https://www.smard.de/nip-download-manager/nip/download/market-data"
 
-    def create_table(self):
+
+class SmardCrawler(ContinuousCrawler):
+    def get_latest_data(self) -> datetime:
+        query = text("SELECT MAX(datum_von) FROM generation")
         try:
-            query_create_hypertable = "SELECT public.create_hypertable('smard', 'timestamp', if_not_exists => TRUE, migrate_data => TRUE);"
-            with self.engine.begin() as conn:
-                conn.execute(
-                    text(
-                        "CREATE TABLE IF NOT EXISTS smard( "
-                        "timestamp timestamp without time zone NOT NULL, "
-                        "commodity_id text, "
-                        "commodity_name text, "
-                        "mwh double precision, "
-                        "PRIMARY KEY (timestamp , commodity_id));"
+            with self.engine.connect() as conn:
+                return conn.execute(query).scalar() or TEMPORAL_START
+        except Exception:
+            log.error("No smard data found")
+            return TEMPORAL_START
+
+    def get_first_data(self) -> datetime:
+        query = text("SELECT MIN(datum_von) FROM generation")
+        try:
+            with self.engine.connect() as conn:
+                return conn.execute(query).scalar() or TEMPORAL_START
+        except Exception:
+            log.error("No smard data found")
+            return TEMPORAL_START
+
+    def create_hypertable_if_not_exists(self) -> None:
+        for key in MODULE_IDS.keys():
+            self.create_single_hypertable_if_not_exists(key, "datum_von")
+
+    def crawl_from_to(self, begin: datetime, end: datetime):
+        """Crawls data from begin (inclusive) until end (exclusive)
+
+        Args:
+            begin (datetime): included begin datetime from which to crawl
+            end (datetime): exclusive end datetime until which to crawl
+        """
+        if begin < TEMPORAL_START:
+            begin = TEMPORAL_START
+
+        if end > datetime.now() + OFFSET_FROM_NOW:
+            end = datetime.now() + OFFSET_FROM_NOW
+
+        sliced_begin = begin
+        sliced_end = sliced_begin + MAX_DELTA
+        while end > sliced_end:
+            self._crawl_single_period(sliced_begin, sliced_end)
+            sliced_begin = sliced_end
+            sliced_end += MAX_DELTA
+        self._crawl_single_period(sliced_begin, end)
+
+    def _crawl_single_period(self, begin: datetime, end: datetime):
+        """Gets data for a single period from begin to end and stores it in the database.
+
+        Args:
+            begin (datetime): starting point of the period to crawl
+            end (datetime): ending point of the period to crawl
+        """
+        log.info("Crawling smard data from %s to %s", begin, end)
+
+        timestamp_from = int(begin.timestamp() * 1000)
+        timestamp_to = int(end.timestamp() * 1000)
+
+        with self.engine.begin() as conn:
+            for table_name, modul_ids in MODULE_IDS.items():
+                log.debug("Downloading %s data from smard from %s to %s", table_name, begin, end)
+                post_json = {
+                    "request_form": [
+                        {
+                            "format": "CSV",
+                            "moduleIds": modul_ids,
+                            "region": "DE",
+                            "timestamp_from": timestamp_from,
+                            "timestamp_to": timestamp_to,
+                            "type": "discrete",
+                            "language": "de",
+                            "resolution": "hour",
+                        }
+                    ]
+                }
+                try:
+                    result = requests.post(SMARD_URL, json=post_json)
+                    # result is csv read it
+                    result.raise_for_status()
+                    df = pd.read_csv(
+                        io.StringIO(result.text),
+                        sep=";",
+                        index_col="Datum von",
+                        date_format="%d.%m.%Y %H:%M",
+                        parse_dates=["Datum von", "Datum bis"],
                     )
-                )
-                conn.execute(text(query_create_hypertable))
-            log.info("created hypertable smard")
-        except Exception as e:
-            log.error(f"could not create hypertable: {e}")
-        try:
-            query_create_hypertable_prices = "SELECT public.create_hypertable('prices', 'timestamp', if_not_exists => TRUE, migrate_data => TRUE);"
-            with self.engine.begin() as conn:
-                conn.execute(
-                    text(
-                        "CREATE TABLE IF NOT EXISTS prices( "
-                        "timestamp timestamp without time zone NOT NULL, "
-                        "commodity_id text, "
-                        "price double precision, "
-                        "PRIMARY KEY (timestamp , commodity_id));"
+                    df.index.name = "datum_von"
+                    df.columns = [col.lower().replace(" ", "_") for col in df.columns]
+
+                    df.to_sql(table_name, conn, if_exists="append")
+                except Exception as e:
+                    log.error(
+                        "Error while downloading %s data with %s from smard: %s",
+                        table_name,
+                        post_json,
+                        e,
                     )
-                )
-                conn.execute(text(query_create_hypertable_prices))
-            log.info("created hypertable prices")
-        except Exception as e:
-            log.error(f"could not create hypertable: {e}")
-
-    def get_data_per_commodity(self):
-        keys = {
-            # 411: 'Prognostizierter Stromverbrauch',
-            4169: "Preis",
-            410: "Realisierter Stromverbrauch",
-            4066: "Biomasse",
-            1226: "Wasserkraft",
-            1225: "Wind Offshore",
-            4067: "Wind Onshore",
-            4068: "Photovoltaik",
-            1228: "Sonstige Erneuerbare",
-            1223: "Braunkohle",
-            4071: "Erdgas",
-            4070: "Pumpspeicher",
-            1227: "Sonstige Konventionelle",
-            4069: "Steinkohle",
-            # 5097: 'Prognostizierte Erzeugung PV und Wind Day-Ahead'
-        }
-
-        for commodity_id, commodity_name in keys.items():
-            start_date, latest = self.select_latest(commodity_id)
-            # start_date_tz to unix time
-            start_date_unix = int(start_date.timestamp() * 1000)
-            url = f"https://www.smard.de/app/chart_data/{commodity_id}/DE/{commodity_id}_DE_quarterhour_{start_date_unix}.json"
-            log.info(url)
-            response = requests.get(url)
-            try:
-                response.raise_for_status()
-            except requests.exceptions.HTTPError as e:
-                log.error(f"Could not get data for commodity: {commodity_id} {e}")
-                continue
-            data = json.loads(response.text)
-            timeseries = pd.DataFrame.from_dict(data["series"])
-            if timeseries.empty:
-                log.info(f"Received empty data for commodity: {commodity_id}")
-                continue
-            timeseries[0] = pd.to_datetime(timeseries[0], unit="ms", utc=True)
-            if commodity_id == 4169:
-                timeseries.columns = ["timestamp", "price"]
-                timeseries = timeseries.dropna(subset="price")
-            else:
-                timeseries.columns = ["timestamp", "mwh"]
-                timeseries = timeseries.dropna(subset="mwh")
-                timeseries["commodity_name"] = commodity_name
-            timeseries["commodity_id"] = commodity_id
-            if latest is not None:
-                timeseries = timeseries[timeseries["timestamp"] > latest]
-
-            yield timeseries
-
-    def select_latest(
-        self, commodity_id, delete=False, prev_latest=None
-    ) -> tuple[pd.Timestamp, pd.Timestamp | None]:
-        # day = default_start_date
-        # today = date.today().strftime('%d.%m.%Y')
-        # sql = f"select timestamp from smard where timestamp > '{day}' and timestamp < '{today}' order by timestamp desc limit 1"
-        if commodity_id != 4169:
-            sql = f"select timestamp from smard where commodity_id='{commodity_id}' order by timestamp desc limit 1"
-        else:
-            sql = f"select timestamp from prices where commodity_id='{commodity_id}' order by timestamp desc limit 1"
-        try:
-            with self.engine.begin() as conn:
-                latest = pd.read_sql(sql, conn, parse_dates=["timestamp"]).values[0][0]
-            latest = pd.to_datetime(latest, unit="ns", utc=True)
-            log.info(f"The latest date in the database is {latest}")
-            if latest.weekday() != 6 or (latest.hour < 21 and latest.minute == 45):
-                last_sunday = latest - timedelta(days=latest.weekday() + 1)
-                last_sunday_22 = last_sunday.replace(
-                    hour=22, minute=0, second=0, microsecond=0
-                )
-                log.info(
-                    f"the latest date in the database is not a sunday after 22:00, taking last week sunday 22:00 as start date to fill the missing data: {latest} -> {last_sunday_22}"
-                )
-                start_date = last_sunday_22
-            elif latest.hour == 21 and latest.minute == 45:
-                log.info(
-                    "the latest date in the database is a sunday 21:45, taking this sunday 22:00 as start date"
-                )
-                start_date = latest.replace(hour=22, minute=0, second=0, microsecond=0)
-            else:
-                log.info(
-                    "the latest date in the database is a sunday 22:45, taking this sunday 23:00 as start date"
-                )
-                start_date = latest.replace(hour=23, minute=0, second=0, microsecond=0)
-            return start_date, latest
-        except Exception as e:
-            log.info(f"Using the default start date {e}")
-            return pd.to_datetime(default_start_date), None
-
-    def feed(self):
-        for data_for_commodity in self.get_data_per_commodity():
-            if data_for_commodity.empty:
-                continue
-            df_for_commodity = data_for_commodity.set_index(
-                ["timestamp", "commodity_id"]
-            )
-            # delete timezone duplicate
-            # https://stackoverflow.com/a/34297689
-            df_for_commodity = df_for_commodity[
-                ~df_for_commodity.index.duplicated(keep="first")
-            ]
-
-            log.info(df_for_commodity)
-            # check if commodity_id is == 4169 then it is price data
-            if df_for_commodity.index.get_level_values("commodity_id")[0] == 4169:
-                with self.engine.begin() as conn:
-                    df_for_commodity.to_sql("prices", con=conn, if_exists="append")
-            else:
-                with self.engine.begin() as conn:
-                    df_for_commodity.to_sql("smard", con=conn, if_exists="append")
-
-
-def main(schema_name):
-    ec = SmardCrawler(schema_name)
-    ec.create_table()
-    ec.feed()
-    ec.set_metadata(metadata_info)
+                    raise e
 
 
 if __name__ == "__main__":
-    logging.basicConfig(filename="smard.log", encoding="utf-8", level=logging.INFO)
-    # db_uri = 'sqlite:///./data/smard.db'
-    main("smard")
+    logging.basicConfig(level=logging.DEBUG)
+    from pathlib import Path
+
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    smard = SmardCrawler("smard", config=config)
+    smard.crawl_temporal()
+

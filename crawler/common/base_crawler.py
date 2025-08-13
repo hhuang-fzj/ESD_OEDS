@@ -4,8 +4,11 @@ from sqlalchemy import create_engine, text, Engine
 from datetime import datetime, timedelta
 from typing import TypedDict
 from pathlib import Path
+import logging
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 class CrawlerConfig(TypedDict):
@@ -73,6 +76,17 @@ class ContinuousCrawler(BaseCrawler):
 
     def create_hypertable_if_not_exists(self) -> None:
         pass
+
+    def create_single_hypertable_if_not_exists(self, table_name: str, time_column: str) -> None:
+        try:
+            query_create_hypertable = text(
+                f"SELECT public.create_hypertable('{table_name}', '{time_column}', if_not_exists => TRUE, migrate_data => TRUE);"
+            )
+            with self.engine.begin() as conn:
+                conn.execute(query_create_hypertable)
+            logger.info(f"created hypertable {table_name} if not exists")
+        except Exception as e:
+            logger.error(f"could not create hypertable: {e}")
 
     def crawl_from_to(self, begin: datetime, end: datetime):
         """Crawls data from begin (inclusive) until end (exclusive)

@@ -5,7 +5,7 @@
             "Group": "Servers",
             "Port": 5432,
             "Username": "opendata",
-            "Host": "open-data-16",
+            "Host": "open-data-17",
             "SSLMode": "prefer",
             "MaintenanceDB": "postgres"
         }
