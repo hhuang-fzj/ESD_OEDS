@@ -39,7 +39,6 @@ class MastrDownloader(DownloadOnceCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig()
-    import yaml
     from pathlib import Path
     config = load_config(Path(__file__).parent.parent / "config.yml")
     mastr = MastrDownloader("mastr", config=config)

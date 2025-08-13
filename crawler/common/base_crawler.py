@@ -32,7 +32,7 @@ class BaseCrawler:
             raise ValueError("Please provide a 'db_uri' in the config")
     
         self.config["db_uri"] = config["db_uri"].format(DBNAME=schema_name)
-        self.engine = create_engine(self.config["db_uri"]) # type: Engine
+        self.engine = create_engine(self.config["db_uri"], pool_pre_ping=True)
         self.create_schema(schema_name)
         
 
@@ -111,21 +111,6 @@ class ContinuousCrawler(BaseCrawler):
             self.crawl_from_to(latest, end)
         self.create_hypertable_if_not_exists()
 
-# ich habe bis 13 Uhr (exklusive)
-
-# ich komme um 13:30 -> ich runde ab auf 13 Uhr und crawle nichts
-# ich komme um  14 Uhr -> ich crawle eine Stunde (bis 14 Uhr (exklusive))
-
-#  13 Uhr ------------- 14 Uhr --------------- 15 Uhr
-
-
-# Daten von 14 bis 15 Uhr
-
-# Ich komme und möchte von 10-17 Uhr:
-
-# -> first data = 14, last_data = 15 Uhr
-# -> crawle von 10-14 Uhr (exklusive Ende)
-# -> crawle ich von 15 bis 17 Uhr (exklusive Ende)
 
 def create_schema_only(engine: Engine, schema_name: str) -> None:
     if engine.url.drivername.startswith("postgresql"):
@@ -133,7 +118,7 @@ def create_schema_only(engine: Engine, schema_name: str) -> None:
             conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
 
 
-def set_metadata_only(engine, metadata_info: dict[str, str]):
+def set_metadata_only(engine: Engine, metadata_info: dict[str, str]):
     for key in ["concave_hull_geometry", "temporal_start", "temporal_end", "contact"]:
         if key not in metadata_info.keys():
             metadata_info[key] = None

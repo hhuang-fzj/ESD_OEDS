@@ -83,7 +83,6 @@ class NinjaCrawler(DownloadOnceCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    import yaml
     from pathlib import Path
     config = load_config(Path(__file__).parent.parent / "config.yml")
     mastr = NinjaCrawler("ninja", config=config)
