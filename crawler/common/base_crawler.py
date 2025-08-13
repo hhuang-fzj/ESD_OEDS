@@ -1,8 +1,9 @@
 from datetime import date
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, Engine
 from datetime import datetime, timedelta
 from typing import TypedDict
+from pathlib import Path
 
 import yaml
 
@@ -16,8 +17,9 @@ class CrawlerConfig(TypedDict):
     ipnt_client_secret: str
 
 
-def load_config(config_path: str = "config.yml") -> CrawlerConfig:
-    config = yaml.safe_load(open(config_path))
+def load_config(config_path: Path | str = "config.yml") -> CrawlerConfig:
+    with Path(config_path).open("r") as f:
+        config = yaml.safe_load(f)
     return config
 
 class BaseCrawler:
@@ -27,7 +29,7 @@ class BaseCrawler:
             raise ValueError("Please provide a 'db_uri' in the config")
     
         self.config["db_uri"] = config["db_uri"].format(DBNAME=schema_name)
-        self.engine = create_engine(self.config["db_uri"])
+        self.engine = create_engine(self.config["db_uri"]) # type: Engine
         self.create_schema(schema_name)
         
 
@@ -41,14 +43,10 @@ class BaseCrawler:
 class DownloadOnceCrawler(BaseCrawler):
     def structure_exists(self) -> bool:
         return False
-    
-    def crawl_structure(self):
-        raise NotImplementedError()
-    
-    def crawl_structural(self, recreate: bool=False):
 
+    def crawl_structural(self, recreate: bool=False):
         if not self.structure_exists() or recreate:
-            self.crawl_structure()
+            raise NotImplementedError()
 
 
 class ContinuousCrawler(BaseCrawler):
@@ -115,9 +113,10 @@ class ContinuousCrawler(BaseCrawler):
 # -> crawle von 10-14 Uhr (exklusive Ende)
 # -> crawle ich von 15 bis 17 Uhr (exklusive Ende)
 
-def create_schema_only(engine, schema_name: str) -> None:
-    with engine.begin() as conn:
-        conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
+def create_schema_only(engine: Engine, schema_name: str) -> None:
+    if engine.url.drivername.startswith("postgresql"):
+        with engine.begin() as conn:
+            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
 
 
 def set_metadata_only(engine, metadata_info: dict[str, str]):
