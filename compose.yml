@@ -1,8 +1,8 @@
 version: "3"
 services:
-  open-data-16:
-    image: timescale/timescaledb-ha:pg16-oss
-    container_name: open-data-16
+  open-data-17:
+    image: timescale/timescaledb-ha:pg17-oss
+    container_name: open-data-17
     restart: always
     shm_size: 32g
     command: postgres -c 'max_connections=6000' -c 'timescaledb.max_background_workers=32' -c 'timescaledb.telemetry_level=off'
@@ -10,9 +10,10 @@ services:
       - POSTGRES_USER=opendata
       - POSTGRES_PASSWORD=opendata
       - POSTGRES_DB=opendata
+      - PGDATA=/var/lib/postgresql/data
     volumes:
-      - ./data/open-data-ha:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./data/open-data-ha:/var/lib/postgresql
+      - ./data/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "6432:5432"
 
@@ -33,7 +34,7 @@ services:
     ports:
       - "8080:80"
     depends_on:
-      - open-data-16
+      - open-data-17
 
   open-postgrest:
     image: postgrest/postgrest:latest
@@ -41,19 +42,19 @@ services:
     ports:
       - "3001:3000"
     environment:
-      PGRST_DB_URI: postgres://readonly:readonly@open-data-16:5432/opendata
+      PGRST_DB_URI: postgres://readonly:readonly@open-data-17:5432/opendata
       PGRST_DB_PRE_CONFIG: postgrest.pre_config
       PGRST_DB_ANON_ROLE: readonly
       PGRST_DB_AGGREGATES_ENABLED: True
     depends_on:
-      - open-data-16
+      - open-data-17
 
   grafana:
     image: grafana/grafana-oss:latest
     container_name: oeds-grafana
     user: "104"
     depends_on:
-      - open-data-16
+      - open-data-17
     ports:
       - 3006:3000
     environment:
@@ -62,8 +63,6 @@ services:
       GF_INSTALL_PLUGINS: "marcusolsson-dynamictext-panel,orchestracities-map-panel"
       GF_SECURITY_ADMIN_USER: opendata
       GF_SECURITY_ADMIN_PASSWORD: "opendata"
-      GF_RENDERING_SERVER_URL: http://renderer:8081/render
-      GF_RENDERING_CALLBACK_URL: http://grafana:3000/
       GF_LOG_FILTERS: rendering:debug
     volumes:
       - ./data/provisioning/grafana/datasources:/etc/grafana/provisioning/datasources
