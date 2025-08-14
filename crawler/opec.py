@@ -24,10 +24,12 @@ from io import StringIO
 import cloudscraper
 import pandas as pd
 import yfinance as yf
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
-from common.base_crawler import create_schema_only, set_metadata_only
-from common.config import db_uri
+from common.base_crawler import (
+    DownloadOnceCrawler,
+    load_config,
+)
 
 log = logging.getLogger("opec")
 log.setLevel(logging.INFO)
@@ -49,12 +51,10 @@ headers = {
 DOWNLOAD_URL = "https://www.opec.org/basket/basketDayArchives.xml"
 
 
-def main(schema_name):
-    engine = create_engine(db_uri(schema_name), pool_pre_ping=True)
-    create_schema_only(engine, schema_name)
-
+def crawl_opec_data():
     retries = 0
     max_retries = 5
+    resp = None
     while retries < max_retries:
         scraper = cloudscraper.create_scraper()
         resp = scraper.get(DOWNLOAD_URL, headers=headers)
@@ -68,7 +68,7 @@ def main(schema_name):
         else:
             break
 
-    if resp.status_code > 200:
+    if not resp or resp.status_code > 200:
         raise Exception("Could not download data")
     df = pd.read_xml(StringIO(resp.text), parse_dates=["data"]).set_index("data")
 
@@ -84,27 +84,33 @@ def main(schema_name):
     # convert euro/barrel to euro/kWh (thermal)
     # 159L, 10kWh/L
     df["euro_per_kwh"] = df["euro_per_barrel"] / 159 / 10
+    return df
 
-    # usdeur["Close"].plot()
-    # df["euro_per_kwh"].plot()
-    try:
-        with engine.begin() as conn:
-            df.to_sql(name="opec", con=conn, if_exists="replace", index=True)
-    except Exception:
-        log.exception("error in opec")
 
-    try:
-        query = text(
-            f"select public.create_hypertable('{schema_name}.opec', 'date', if_not_exists => TRUE, migrate_data => TRUE)"
-        )
-        with engine.begin() as conn:
-            conn.execute(query)
-        log.error("successfully created hypertable for opec")
-    except Exception:
-        log.error("could not create hypertable for opec")
-    set_metadata_only(engine, metadata_info)
+class OpecDownloader(DownloadOnceCrawler):
+    def structure_exists(self) -> bool:
+        try:
+            with self.engine.connect() as conn:
+                return conn.execute(text("SELECT 1 from opec limit 1")).scalar() == 1
+        except Exception:
+            return False
+
+    def crawl_structural(self, recreate: bool = False):
+        if not self.structure_exists() or recreate:
+            df = crawl_opec_data()
+            with self.engine.begin() as conn:
+                df.to_sql("opec", conn, if_exists="replace", index=True)
+
+        self.create_hypertable_if_not_exists()
+
+    def create_hypertable_if_not_exists(self) -> None:
+        self.create_single_hypertable_if_not_exists("opec", "date")
 
 
 if __name__ == "__main__":
     logging.basicConfig()
-    main("opec")
+    from pathlib import Path
+
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    opec = OpecDownloader("opec", config=config)
+    opec.crawl_structural(recreate=False)
