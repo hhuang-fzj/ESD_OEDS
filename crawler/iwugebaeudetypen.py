@@ -5,6 +5,7 @@
 import io
 import logging
 import zipfile
+
 import pandas as pd
 import requests
 from sqlalchemy import text
@@ -71,6 +72,7 @@ def set_sanierungsstand(row):
         sanierungsstand = "Modern"
     return sanierungsstand
 
+
 def set_heizmittel(row):
     variante = row["Gebäude_variante"]
     heizmittel = variante[1]
@@ -81,6 +83,7 @@ def set_heizmittel(row):
     else:
         heizmittel = "Strom"
     return heizmittel
+
 
 def create_identifier(row):
     baualater = row["Baualtersklasse"]
@@ -113,6 +116,7 @@ def create_identifier(row):
 
     return identifier
 
+
 def handle_dates(iwu_data):
     datecol = iwu_data[iwu_data.columns[5]]
     # Extract starting year
@@ -131,12 +135,13 @@ def handle_dates(iwu_data):
 class IwuCrawler(DownloadOnceCrawler):
     def structure_exists(self) -> bool:
         try:
+            query = text("SELECT 1 from iwu_typgebäude limit 1")
             with self.engine.connect() as conn:
-                return conn.execute(text("SELECT 1 from iwu_typgebäude limit 1")).scalar() == 1
-        except Exception as e:
+                return conn.execute(query).scalar() == 1
+        except Exception:
             return False
 
-    def crawl_structural(self, recreate: bool=False):
+    def crawl_structural(self, recreate: bool = False):
         if not self.structure_exists() or recreate:
             log.info("Crawling IWU")
 
@@ -162,9 +167,7 @@ class IwuCrawler(DownloadOnceCrawler):
 
         iwu_data.columns = COLUMN_NAMES
 
-        iwu_data["Sanierungsstand"] = iwu_data.apply(
-            set_sanierungsstand, axis=1
-        )
+        iwu_data["Sanierungsstand"] = iwu_data.apply(set_sanierungsstand, axis=1)
         iwu_data["Heizklasse"] = iwu_data.apply(set_heizmittel, axis=1)
         iwu_data["IWU_ID"] = iwu_data.apply(create_identifier, axis=1)
 
@@ -178,6 +181,7 @@ class IwuCrawler(DownloadOnceCrawler):
 if __name__ == "__main__":
     logging.basicConfig()
     from pathlib import Path
+
     config = load_config(Path(__file__).parent.parent / "config.yml")
     craw = IwuCrawler("iwu", config)
     craw.crawl_structural(recreate=False)

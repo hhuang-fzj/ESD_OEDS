@@ -1,19 +1,17 @@
-import json
-import os.path as osp
-import pandas as pd
+import logging
 
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from sqlalchemy import text
-import logging
 
 from common.base_crawler import DownloadOnceCrawler, load_config
-
 
 log = logging.getLogger(__name__)
 
 CHARGEPOINT_MAP_URL = "https://mc-eu.chargepoint.com/map-prod/get"
 PRICE_URL = "https://de.chargepoint.com/dashboard/getStationPricingDetails"
+
 
 def read_stations():
     stations = {}
@@ -34,7 +32,8 @@ def read_stations():
         for sort in ["installation_date", "distance"]:
             # f-string would be unreadable here
             url = (
-                CHARGEPOINT_MAP_URL + '?{"station_list":{'
+                CHARGEPOINT_MAP_URL
+                + '?{"station_list":{'
                 + location
                 + '"page_size":100,"page_offset":"", "sort_by":"'
                 + sort
@@ -44,7 +43,11 @@ def read_stations():
             resp = requests.get(url)
             j = resp.json()
 
-            log.info("Summary Count for %s: %s", location, len(j["station_list"]["summaries"]))
+            log.info(
+                "Summary Count for %s: %s",
+                location,
+                len(j["station_list"]["summaries"]),
+            )
 
             new_stations = 0
             for station in j["station_list"]["summaries"]:
@@ -95,11 +98,16 @@ class ChargepointDownloader(DownloadOnceCrawler):
     def structure_exists(self) -> bool:
         try:
             with self.engine.connect() as conn:
-                return conn.execute(text("SELECT 1 from chargingstations limit 1")).scalar() == 1
-        except Exception as e:
+                return (
+                    conn.execute(
+                        text("SELECT 1 from chargingstations limit 1")
+                    ).scalar()
+                    == 1
+                )
+        except Exception:
             return False
 
-    def crawl_structural(self, recreate: bool=False):
+    def crawl_structural(self, recreate: bool = False):
         if not self.structure_exists() or recreate:
             stations = read_stations()
             df = pd.DataFrame(stations).T
@@ -115,6 +123,7 @@ class ChargepointDownloader(DownloadOnceCrawler):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     from pathlib import Path
+
     config = load_config(Path(__file__).parent.parent / "config.yml")
     chargepoint = ChargepointDownloader("chargepoint", config=config)
     chargepoint.crawl_structural(recreate=False)

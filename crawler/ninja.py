@@ -24,19 +24,23 @@ metadata_info = {
 WIND_URL = "https://www.renewables.ninja/downloads/ninja_europe_wind_v1.1.zip"
 SOLAR_URL = "https://www.renewables.ninja/downloads/ninja_europe_pv_v1.1.zip"
 
+
 class NinjaCrawler(DownloadOnceCrawler):
     def structure_exists(self) -> bool:
         try:
+            query = text("SELECT 1 from capacity_wind_off limit 1")
             with self.engine.connect() as conn:
-                return conn.execute(text("SELECT 1 from capacity_wind_off limit 1")).scalar() == 1
-        except Exception as e:
+                return conn.execute(query).scalar() == 1
+        except Exception:
             return False
-        
+
     def write_wind_capacity_factors(self, url):
         log.info("Crawling renewables.ninja wind data")
         response = requests.get(url)
         with zipfile.ZipFile(BytesIO(response.content)) as z_file:
-            with z_file.open("ninja_wind_europe_v1.1_current_on-offshore.csv") as ninja_wind_file:
+            with z_file.open(
+                "ninja_wind_europe_v1.1_current_on-offshore.csv"
+            ) as ninja_wind_file:
                 data = pd.read_csv(ninja_wind_file, index_col=0)
                 data.index = pd.to_datetime(data.index)
                 onshore = {
@@ -53,9 +57,8 @@ class NinjaCrawler(DownloadOnceCrawler):
                         if "OFF" in col
                     }
                     df_off = pd.DataFrame(data=offshore, index=data.index)
-                    
-                    df_off.to_sql("capacity_wind_off", conn, if_exists="replace")
 
+                    df_off.to_sql("capacity_wind_off", conn, if_exists="replace")
 
     def write_solar_capacity_factors(self, url):
         log.info("Crawling renewables.ninja solar data")
@@ -73,7 +76,7 @@ class NinjaCrawler(DownloadOnceCrawler):
         self.create_single_hypertable_if_not_exists("capacity_wind_off", "time")
         self.create_single_hypertable_if_not_exists("capacity_solar_merra2", "time")
 
-    def crawl_structural(self, recreate: bool=False):
+    def crawl_structural(self, recreate: bool = False):
         if not self.structure_exists() or recreate:
             log.info("Crawling renewables.ninja data")
             self.write_wind_capacity_factors(WIND_URL)
@@ -81,10 +84,11 @@ class NinjaCrawler(DownloadOnceCrawler):
             log.info("Finished writing renewables.ninja data to Database")
         self.create_hypertable_if_not_exists()
 
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     from pathlib import Path
+
     config = load_config(Path(__file__).parent.parent / "config.yml")
     mastr = NinjaCrawler("ninja", config=config)
     mastr.crawl_structural(recreate=False)
-

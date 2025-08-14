@@ -30,19 +30,29 @@ metadata_info = {
     "temporal_end": None,
 }
 
+
 class LadesaeulenregisterCrawler(DownloadOnceCrawler):
     def structure_exists(self) -> bool:
         try:
+            query = text("SELECT 1 from ladesaeulenregister limit 1")
             with self.engine.connect() as conn:
-                return conn.execute(text("SELECT 1 from ladesaeulenregister limit 1")).scalar() == 1
-        except Exception as e:
+                return conn.execute(query).scalar() == 1
+        except Exception:
             return False
 
-    def crawl_structural(self, recreate: bool=False):
+    def crawl_structural(self, recreate: bool = False):
         if not self.structure_exists() or recreate:
             log.info("Crawling Ladesäulenregister")
             url = "https://data.bundesnetzagentur.de/Bundesnetzagentur/DE/Fachthemen/ElektrizitaetundGas/E-Mobilitaet/Ladesaeulenregister_BNetzA_2025-07-18.csv"
-            df = pd.read_csv(url, skiprows=10, delimiter=";", encoding="iso-8859-1", index_col=0, decimal=",", low_memory=False)
+            df = pd.read_csv(
+                url,
+                skiprows=10,
+                delimiter=";",
+                encoding="iso-8859-1",
+                index_col=0,
+                decimal=",",
+                low_memory=False,
+            )
 
             with self.engine.begin() as conn:
                 df.to_sql("ladesaeulenregister", conn, if_exists="replace")
@@ -52,7 +62,7 @@ class LadesaeulenregisterCrawler(DownloadOnceCrawler):
 if __name__ == "__main__":
     logging.basicConfig()
     from pathlib import Path
+
     config = load_config(Path(__file__).parent.parent / "config.yml")
     mastr = LadesaeulenregisterCrawler("ladesaeulenregister", config=config)
     mastr.crawl_structural(recreate=False)
-

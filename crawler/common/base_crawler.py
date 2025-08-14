@@ -1,12 +1,10 @@
-from datetime import date
-
-from sqlalchemy import create_engine, text, Engine
-from datetime import datetime, timedelta
-from typing import TypedDict
-from pathlib import Path
 import logging
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import TypedDict
 
 import yaml
+from sqlalchemy import Engine, create_engine, text
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +23,16 @@ def load_config(config_path: Path | str = "config.yml") -> CrawlerConfig:
         config = yaml.safe_load(f)
     return config
 
+
 class BaseCrawler:
     def __init__(self, schema_name: str, config: CrawlerConfig):
         self.config = config
         if "db_uri" not in config.keys():
             raise ValueError("Please provide a 'db_uri' in the config")
-    
+
         self.config["db_uri"] = config["db_uri"].format(DBNAME=schema_name)
         self.engine = create_engine(self.config["db_uri"], pool_pre_ping=True)
         self.create_schema(schema_name)
-        
 
     def create_schema(self, schema_name: str) -> str:
         create_schema_only(self.engine, schema_name)
@@ -45,7 +43,9 @@ class BaseCrawler:
     def create_hypertable_if_not_exists(self) -> None:
         pass
 
-    def create_single_hypertable_if_not_exists(self, table_name: str, time_column: str) -> None:
+    def create_single_hypertable_if_not_exists(
+        self, table_name: str, time_column: str
+    ) -> None:
         try:
             query_create_hypertable = text(
                 f"SELECT public.create_hypertable('{table_name}', '{time_column}', if_not_exists => TRUE, migrate_data => TRUE);"
@@ -56,11 +56,12 @@ class BaseCrawler:
         except Exception as e:
             logger.error(f"could not create hypertable: {e}")
 
+
 class DownloadOnceCrawler(BaseCrawler):
     def structure_exists(self) -> bool:
         return False
 
-    def crawl_structural(self, recreate: bool=False):
+    def crawl_structural(self, recreate: bool = False):
         if not self.structure_exists() or recreate:
             raise NotImplementedError()
         self.create_hypertable_if_not_exists()
@@ -71,19 +72,19 @@ class ContinuousCrawler(BaseCrawler):
 
     The idea is to take care of conditional constraints (like end date must be at hour 0) in the crawler.
     All crawlers should fit to this interface, to handle the start and end date well, and also handle download of data prior to the existing data, if exists.
-    
+
     All temporal data should be in UTC.
 
 
     Args:
         BaseCrawler (_type_): _description_
     """
-    TIMEDELTA=timedelta(hours=1)
-    
+
+    TIMEDELTA = timedelta(hours=1)
+
     @classmethod
     def get_minimum_delta(cls):
         return cls.TIMEDELTA
-
 
     def get_latest_data(self) -> datetime:
         raise NotImplementedError()
@@ -98,9 +99,10 @@ class ContinuousCrawler(BaseCrawler):
             begin (datetime): included begin datetime from which to crawl
             end (datetime): exclusive end datetime until which to crawl
         """
-        pass
 
-    def crawl_temporal(self, begin: datetime | None = None, end: datetime | None = None):
+    def crawl_temporal(
+        self, begin: datetime | None = None, end: datetime | None = None
+    ):
         latest = self.get_latest_data()
 
         if begin:

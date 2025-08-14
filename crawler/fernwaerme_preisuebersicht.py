@@ -2,13 +2,12 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-import io
 import logging
-import zipfile
+
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-import numpy as np
+
 from common.base_crawler import BaseCrawler
 
 log = logging.getLogger("iwu")
@@ -35,80 +34,136 @@ class FWCrawler(BaseCrawler):
     def pull_data(self):
         url = "https://waermepreise.info"
         response = requests.get(url)
-        soup = BeautifulSoup(response.content, 'html.parser')
+        soup = BeautifulSoup(response.content, "html.parser")
 
-        table = soup.find('table')
-        headers = [header.text.strip() for header in table.find_all('th')]
+        table = soup.find("table")
+        headers = [header.text.strip() for header in table.find_all("th")]
 
         rows = []
-        for row in table.find_all('tr')[1:]:
-            rows.append([cell.text.strip() for cell in row.find_all('td')])
+        for row in table.find_all("tr")[1:]:
+            rows.append([cell.text.strip() for cell in row.find_all("td")])
 
         df = pd.DataFrame(rows, columns=headers)
 
         def normalize_col(col):
-            return ' '.join(col.split()).replace('\xa0', ' ')
+            return " ".join(col.split()).replace("\xa0", " ")
 
         df.columns = [normalize_col(col) for col in df.columns]
-        #print("Normalized columns:", df.columns.tolist())  
+        # print("Normalized columns:", df.columns.tolist())
 
-        for col in ['EFH in ct/kWh (brutto) EFH in ct/kWh = Einfamilienhaus Abnahmefall 15 kW (27.000 kWh))', 
-                    'MFH in ct/kWh (brutto) MFH in ct/kWh = Mehrfamilienhaus Abnahmefall 160 kW (288.000 kWh)', 
-                    'Industrie in ct/kWh (brutto) Industrie in ct/kWh = Industrie bzw. Gewerbe/Handel/Dienstleistungen Abnahmefall 600 kW (1.080.000 kWh)']:
-            df[col] = df[col].str.replace(',', '.').str.strip()
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-                
-        column_name5 = 'Netzverluste in MWh/a Netzverluste werden bestimmt durch - Netzlänge - Abnahmedichte - Netztemperatur'
-        df[column_name5] = df[column_name5].str.replace(',', '.').str.strip()
-        df[column_name5] = pd.to_numeric(df[column_name5], errors='coerce')
+        for col in [
+            "EFH in ct/kWh (brutto) EFH in ct/kWh = Einfamilienhaus Abnahmefall 15 kW (27.000 kWh))",
+            "MFH in ct/kWh (brutto) MFH in ct/kWh = Mehrfamilienhaus Abnahmefall 160 kW (288.000 kWh)",
+            "Industrie in ct/kWh (brutto) Industrie in ct/kWh = Industrie bzw. Gewerbe/Handel/Dienstleistungen Abnahmefall 600 kW (1.080.000 kWh)",
+        ]:
+            df[col] = df[col].str.replace(",", ".").str.strip()
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        column_name6 =  'Netzverluste Netzverluste werden bestimmt durch - Netzlänge - Abnahmedichte - Netztemperatur'
-        df[column_name6] = df[column_name6].str.replace('%', '').str.replace(',', '.').str.strip()
-        df[column_name6] = pd.to_numeric(df[column_name6], errors='coerce')
+        column_name5 = "Netzverluste in MWh/a Netzverluste werden bestimmt durch - Netzlänge - Abnahmedichte - Netztemperatur"
+        df[column_name5] = df[column_name5].str.replace(",", ".").str.strip()
+        df[column_name5] = pd.to_numeric(df[column_name5], errors="coerce")
 
-        column_name8 =  'Anteil KWK KWK (Kraft-Wärme-Kopplung) gleichzeitige Strom- und Wärmeerzeugung besonders effiziente Ausnutzung des eingesetzten Brennstoffs'
-        df[column_name8] = df[column_name8].str.replace('%', '').str.replace(',', '.').str.strip()
-        df[column_name8] = pd.to_numeric(df[column_name8], errors='coerce')
+        column_name6 = "Netzverluste Netzverluste werden bestimmt durch - Netzlänge - Abnahmedichte - Netztemperatur"
+        df[column_name6] = (
+            df[column_name6].str.replace("%", "").str.replace(",", ".").str.strip()
+        )
+        df[column_name6] = pd.to_numeric(df[column_name6], errors="coerce")
 
-        column_name9 = 'PEF Glossar'
-        df[column_name9] = df[column_name9].str.replace(',', '.').str.strip()
-        df[column_name9] = pd.to_numeric(df[column_name9], errors='coerce')
+        column_name8 = "Anteil KWK KWK (Kraft-Wärme-Kopplung) gleichzeitige Strom- und Wärmeerzeugung besonders effiziente Ausnutzung des eingesetzten Brennstoffs"
+        df[column_name8] = (
+            df[column_name8].str.replace("%", "").str.replace(",", ".").str.strip()
+        )
+        df[column_name8] = pd.to_numeric(df[column_name8], errors="coerce")
 
-        column_name4 = 'Netzgröße in MW Netzgröße nach Höhe der angeschlossenen Wärme­erzeugungs­leistung'
-        df[['Min Netzgröße', 'Max Netzgröße']] = df[column_name4].str.split('-', expand=True)
+        column_name9 = "PEF Glossar"
+        df[column_name9] = df[column_name9].str.replace(",", ".").str.strip()
+        df[column_name9] = pd.to_numeric(df[column_name9], errors="coerce")
 
-        df['Min Netzgröße'] = df.apply(lambda row: 0 if str(row['Min Netzgröße']).startswith('b') else row['Min Netzgröße'], axis=1)
-        df['Max Netzgröße'] = df.apply(lambda row: row['Max Netzgröße'] if str(row['Max Netzgröße']).startswith('b') else row['Max Netzgröße'], axis=1)
-
-        df['Min Netzgröße'] = df[column_name4].apply(lambda x: None if 'größer' in x else x.split('-')[0].strip())
-        df['Max Netzgröße'] = df[column_name4].apply(lambda x:  x.replace('bis', '').strip()if 'bis' in x else x.split('-')[-1].strip())
-        df['Max Netzgröße'] = df['Max Netzgröße'].apply(lambda x: 'unlimited' if str().startswith('g') else x)
-
-        df['Min Netzgröße'] = df['Min Netzgröße'].str.replace(',', '.').str.replace('MW', '').str.strip()
-        df['Min Netzgröße'] = pd.to_numeric(df['Min Netzgröße'], errors='coerce')
-        df['Max Netzgröße'] = pd.to_numeric(df['Max Netzgröße'], errors='coerce')
-
-        df['Min Netzgröße'] = df[column_name4].apply(
-            lambda x: 0 if 'bis' in x else (x if 'größer' in x else x.split('-')[0].strip())
-            .replace('größer', '').replace('MW', '').strip()
-        )                                           
-        df['Max Netzgröße'] = df[column_name4].apply(
-            lambda x: x if 'bis' in x else ('unlimited' if 'größer' in x else x.split('-')[-1].strip())
+        column_name4 = "Netzgröße in MW Netzgröße nach Höhe der angeschlossenen Wärme­erzeugungs­leistung"
+        df[["Min Netzgröße", "Max Netzgröße"]] = df[column_name4].str.split(
+            "-", expand=True
         )
 
-        df['Max Netzgröße'] = df['Max Netzgröße'].str.replace('MW', '').str.replace(',', '.').str.replace('bis', '').str.strip()
+        df["Min Netzgröße"] = df.apply(
+            lambda row: 0
+            if str(row["Min Netzgröße"]).startswith("b")
+            else row["Min Netzgröße"],
+            axis=1,
+        )
+        df["Max Netzgröße"] = df.apply(
+            lambda row: row["Max Netzgröße"]
+            if str(row["Max Netzgröße"]).startswith("b")
+            else row["Max Netzgröße"],
+            axis=1,
+        )
 
-        column_name7 =  'Anteil EE & KE erneuerbare Energieträger und Abwärme gemäß § 3 WPG (Wärmeplanungsgesetz)'
-        df[['Min EE & KN', 'Max EE & KN']] = df[column_name7].str.split('-',n=1, expand=True).reindex(columns=[0, 1]) 
-        df['Min EE & KN'] = df['Min EE & KN'].str.replace(',', '.').str.strip()
-        df['Min EE & KN'] = df[column_name7].apply(lambda x: None if (isinstance(x, str) and ('bis' in x or x.strip().startswith('<'))) else x.split('-')[0].strip())
-        df['Max EE & KN'] = df[column_name7].apply(lambda x: x.replace('bis', '').strip() if 'bis' in x else x.strip()[1:].strip() if (isinstance(x, str) and x.strip().startswith('<')) else x.split('-')[-1].strip())
-        df['Max EE & KN'] = df['Max EE & KN'].str.replace('%', '').str.replace(',', '.').str.strip()
-        df['Min EE & KN'] = pd.to_numeric(df['Min EE & KN'], errors='coerce')
-        df['Max EE & KN'] = pd.to_numeric(df['Max EE & KN'], errors='coerce')
-        #df['Min EE & KN'].fillna('-', inplace=True)
-        #df['Max EE & KN'].fillna('-', inplace=True)
-        df['Preisstand Datum der letzten Preisanpassung'] = pd.to_datetime(df['Preisstand Datum der letzten Preisanpassung'], errors='coerce')
+        df["Min Netzgröße"] = df[column_name4].apply(
+            lambda x: None if "größer" in x else x.split("-")[0].strip()
+        )
+        df["Max Netzgröße"] = df[column_name4].apply(
+            lambda x: x.replace("bis", "").strip()
+            if "bis" in x
+            else x.split("-")[-1].strip()
+        )
+        df["Max Netzgröße"] = df["Max Netzgröße"].apply(
+            lambda x: "unlimited" if "".startswith("g") else x
+        )
+
+        df["Min Netzgröße"] = (
+            df["Min Netzgröße"].str.replace(",", ".").str.replace("MW", "").str.strip()
+        )
+        df["Min Netzgröße"] = pd.to_numeric(df["Min Netzgröße"], errors="coerce")
+        df["Max Netzgröße"] = pd.to_numeric(df["Max Netzgröße"], errors="coerce")
+
+        df["Min Netzgröße"] = df[column_name4].apply(
+            lambda x: 0
+            if "bis" in x
+            else (x if "größer" in x else x.split("-")[0].strip())
+            .replace("größer", "")
+            .replace("MW", "")
+            .strip()
+        )
+        df["Max Netzgröße"] = df[column_name4].apply(
+            lambda x: x
+            if "bis" in x
+            else ("unlimited" if "größer" in x else x.split("-")[-1].strip())
+        )
+
+        df["Max Netzgröße"] = (
+            df["Max Netzgröße"]
+            .str.replace("MW", "")
+            .str.replace(",", ".")
+            .str.replace("bis", "")
+            .str.strip()
+        )
+
+        column_name7 = "Anteil EE & KE erneuerbare Energieträger und Abwärme gemäß § 3 WPG (Wärmeplanungsgesetz)"
+        df[["Min EE & KN", "Max EE & KN"]] = (
+            df[column_name7].str.split("-", n=1, expand=True).reindex(columns=[0, 1])
+        )
+        df["Min EE & KN"] = df["Min EE & KN"].str.replace(",", ".").str.strip()
+        df["Min EE & KN"] = df[column_name7].apply(
+            lambda x: None
+            if (isinstance(x, str) and ("bis" in x or x.strip().startswith("<")))
+            else x.split("-")[0].strip()
+        )
+        df["Max EE & KN"] = df[column_name7].apply(
+            lambda x: x.replace("bis", "").strip()
+            if "bis" in x
+            else x.strip()[1:].strip()
+            if (isinstance(x, str) and x.strip().startswith("<"))
+            else x.split("-")[-1].strip()
+        )
+        df["Max EE & KN"] = (
+            df["Max EE & KN"].str.replace("%", "").str.replace(",", ".").str.strip()
+        )
+        df["Min EE & KN"] = pd.to_numeric(df["Min EE & KN"], errors="coerce")
+        df["Max EE & KN"] = pd.to_numeric(df["Max EE & KN"], errors="coerce")
+        # df['Min EE & KN'].fillna('-', inplace=True)
+        # df['Max EE & KN'].fillna('-', inplace=True)
+        df["Preisstand Datum der letzten Preisanpassung"] = pd.to_datetime(
+            df["Preisstand Datum der letzten Preisanpassung"], errors="coerce"
+        )
 
         df.drop(columns=[column_name4, column_name7], inplace=True)
 
@@ -118,6 +173,7 @@ class FWCrawler(BaseCrawler):
         with self.engine.begin() as conn:
             tbl_name = "fernwaerme_preisuebersicht"
             data.to_sql(tbl_name, conn, if_exists="replace")
+
 
 def main(schema_name):
     iwu = FWCrawler(schema_name)

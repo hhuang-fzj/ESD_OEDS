@@ -10,14 +10,14 @@ companies that emit greenhouse gases.
 For this lots of 1000t CO2eq are sold with a given price in €/t CO2eq.
 """
 
-from datetime import datetime, timedelta
+import io
 import logging
+from datetime import datetime, timedelta
 
 import pandas as pd
+import requests
 import yfinance as yf
 from sqlalchemy import text
-import requests
-import io
 
 from common.base_crawler import ContinuousCrawler, load_config
 
@@ -41,14 +41,13 @@ COAL_URL = "https://energy-api.instrat.pl/api/coal/pscmi_1"
 # the heat_url switches between Y-m-d and Y-d-m and is not practicable to parse
 COAL_HEAT_URL = "https://energy-api.instrat.pl/api/coal/pscmi_2"
 # gas used for electricity generation PLN/MWh
-GAS_URL = (
-    "https://energy-api.instrat.pl/api/prices/gas_price_rdn_daily"
-)
+GAS_URL = "https://energy-api.instrat.pl/api/prices/gas_price_rdn_daily"
 TEMPORAL_START = datetime(2012, 1, 3)
 
+
 class InstratPlCrawler(ContinuousCrawler):
-    TIMEDELTA=timedelta(days=2)
-    
+    TIMEDELTA = timedelta(days=2)
+
     def get_latest_data(self) -> datetime:
         query = text("SELECT MAX(date) FROM eu_ets")
         try:
@@ -66,7 +65,6 @@ class InstratPlCrawler(ContinuousCrawler):
         except Exception:
             log.error("No intrat_pl data found")
             return TEMPORAL_START
-        
 
     def crawl_from_to(self, begin: datetime, end: datetime):
         """Crawls data from begin (inclusive) until end (exclusive)
@@ -92,9 +90,9 @@ class InstratPlCrawler(ContinuousCrawler):
             df = df.set_index("date")
             df.index = df.index.tz_localize(None)
             return df
-        
+
         eu_ets_data_raw = download_data(EU_ETS_URL)
-        
+
         eu_ets_data = eu_ets_data_raw.resample("D").bfill()
         eu_ets_data.rename(columns={"price": "eur_per_tco2"}, inplace=True)
 
@@ -110,7 +108,9 @@ class InstratPlCrawler(ContinuousCrawler):
         coal_data["steam_coal_eur_per_gj"] = (
             coal_data["pscmi1_pln_per_gj"] * resample_pln_eur
         )
-        coal_data["steam_coal_eur_per_t"] = coal_data["pscmi1_pln_per_t"] * resample_pln_eur
+        coal_data["steam_coal_eur_per_t"] = (
+            coal_data["pscmi1_pln_per_t"] * resample_pln_eur
+        )
         # 1 GJ = 1e9 Ws = 1e9/3600 Wh = 1e6/3600 kWh
         coal_data["price_eur_per_kwh"] = coal_data["steam_coal_eur_per_gj"] / (
             1e6 / 3600
@@ -129,14 +129,18 @@ class InstratPlCrawler(ContinuousCrawler):
         gas_data["price_eur_per_kwh"] = gas_data["price_eur_per_mwh"] / 1e3
         try:
             with self.engine.begin() as conn:
-                eu_ets_data.to_sql(name="eu_ets", con=conn, if_exists="append", index=True)
+                eu_ets_data.to_sql(
+                    name="eu_ets", con=conn, if_exists="append", index=True
+                )
                 coal_data.to_sql(
                     name="coal_price", con=conn, if_exists="append", index=True
                 )
-                gas_data.to_sql(name="gas_price", con=conn, if_exists="append", index=True)
+                gas_data.to_sql(
+                    name="gas_price", con=conn, if_exists="append", index=True
+                )
         except Exception:
             log.exception("error in instat_pl data download")
-    
+
     def create_hypertable_if_not_exists(self) -> None:
         for table in ["eu_ets", "coal_price", "gas_price"]:
             self.create_single_hypertable_if_not_exists(table, "date")
@@ -145,6 +149,7 @@ class InstratPlCrawler(ContinuousCrawler):
 if __name__ == "__main__":
     logging.basicConfig()
     from pathlib import Path
+
     config = load_config(Path(__file__).parent.parent / "config.yml")
     mastr = InstratPlCrawler("instrat_pl", config=config)
     mastr.crawl_temporal()
