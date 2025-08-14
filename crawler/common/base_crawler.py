@@ -78,9 +78,12 @@ class ContinuousCrawler(BaseCrawler):
     Args:
         BaseCrawler (_type_): _description_
     """
-    FIRST_DATA=datetime(2019,1,1)
-    TIMEDELTA=timedelta(days=-7)
-    URL="https://google.de"
+    TIMEDELTA=timedelta(hours=1)
+    
+    @classmethod
+    def get_minimum_delta(cls):
+        return cls.TIMEDELTA
+
 
     def get_latest_data(self) -> datetime:
         raise NotImplementedError()
@@ -106,8 +109,8 @@ class ContinuousCrawler(BaseCrawler):
                 self.crawl_from_to(begin, first)
         if not end:
             end = datetime.now()
-        
-        if latest < end:
+
+        if latest < end - self.__class__.get_minimum_delta():
             self.crawl_from_to(latest, end)
         self.create_hypertable_if_not_exists()
 
