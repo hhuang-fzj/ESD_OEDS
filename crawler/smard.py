@@ -128,13 +128,20 @@ MODULE_IDS["forecast_day_ahead"] = [
 MODULE_IDS["consumption"] = [5000410, 5004387, 5005140, 5004359]
 MODULE_IDS["frequency_reserve"] = [15004383, 15004384, 15004382, 15004390]
 
+# Data is available from 2015-01-01 until now
 TEMPORAL_START = datetime(2015, 1, 1)
-MAX_DELTA = timedelta(weeks=52)
-OFFSET_FROM_NOW = timedelta(hours=-6)
+
+# We can query up to 5 years at once - keep this small for now
+MAX_DELTA = timedelta(weeks=104)
+
 SMARD_URL = "https://www.smard.de/nip-download-manager/nip/download/market-data"
 
 
 class SmardCrawler(ContinuousCrawler):
+    # Data is only available after 6 hours - so we should not crawl to far
+    # Otherwise we only receive null values
+    OFFSET_FROM_NOW = timedelta(hours=6)
+
     def get_latest_data(self) -> datetime:
         query = text("SELECT MAX(datum_von) FROM generation")
         try:
@@ -167,8 +174,10 @@ class SmardCrawler(ContinuousCrawler):
         if begin < TEMPORAL_START:
             begin = TEMPORAL_START
 
-        if end > datetime.now() + OFFSET_FROM_NOW:
-            end = datetime.now() + OFFSET_FROM_NOW
+        data_available_until = datetime.now() - self.get_minimum_offset()
+
+        if end > data_available_until:
+            end = data_available_until
 
         sliced_begin = begin
         sliced_end = sliced_begin + MAX_DELTA
