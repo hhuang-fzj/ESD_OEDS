@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Christian Rieke, Florian Maurer
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import logging
 import zipfile
 from io import BytesIO

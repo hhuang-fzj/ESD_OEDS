@@ -1,0 +1,19 @@
+version = 1
+
+[[annotations]]
+path = "data/**"
+precedence = "override"
+SPDX-FileCopyrightText = "OEDS Contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = "crawler/data/**"
+precedence = "override"
+SPDX-FileCopyrightText = "OEDS Contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = "docs/**"
+precedence = "override"
+SPDX-FileCopyrightText = "OEDS Contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
