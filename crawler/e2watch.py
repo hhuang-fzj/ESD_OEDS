@@ -4,15 +4,19 @@
 
 import json
 import logging
-import os
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 import requests
 from sqlalchemy import text
 
-from common.base_crawler import BaseCrawler, ContinuousCrawler, CrawlerConfig, DownloadOnceCrawler, load_config
+from common.base_crawler import (
+    ContinuousCrawler,
+    CrawlerConfig,
+    DownloadOnceCrawler,
+    load_config,
+)
 
 log = logging.getLogger("e2watch")
 metadata_info = {
@@ -25,6 +29,7 @@ metadata_info = {
 }
 TEMPORAL_START = datetime(2019, 1, 2, 1, 0, 0)
 MAX_DELTA = timedelta(weeks=4)  # We can query a year at once without problems
+
 
 class E2WatchCrawler(ContinuousCrawler, DownloadOnceCrawler):
     TIMEDELTA = timedelta(days=1)
@@ -49,7 +54,6 @@ class E2WatchCrawler(ContinuousCrawler, DownloadOnceCrawler):
                 buildings.to_sql("buildings", con=conn, if_exists="replace")
 
         self.create_hypertable_if_not_exists()
-
 
     def get_latest_data(self) -> datetime:
         """Returns the latest timestamp of the e2watch data in the database."""
@@ -76,7 +80,7 @@ class E2WatchCrawler(ContinuousCrawler, DownloadOnceCrawler):
             log.debug(f"Latest date in the database is {latest}")
             return latest
         except Exception as e:
-            log.info(f"Using the default start date: %s", e)
+            log.info("Using the default start date: %s", e)
             return TEMPORAL_START
 
     def crawl_from_to(self, begin: datetime, end: datetime):
@@ -109,10 +113,14 @@ class E2WatchCrawler(ContinuousCrawler, DownloadOnceCrawler):
         sliced_begin = begin
         sliced_end = sliced_begin + MAX_DELTA
 
-    def _crawl_single_period(self, buildings: pd.DataFrame, begin: datetime, end: datetime):
+    def _crawl_single_period(
+        self, buildings: pd.DataFrame, begin: datetime, end: datetime
+    ):
         log.info("Crawling e2watch data from %s to %s", begin, end)
         for bilanzkreis_id in buildings.index.values:
-            last_date_in_db = self.select_latest_per_bilanzkreis(bilanzkreis_id) + timedelta(hours=1)
+            last_date_in_db = self.select_latest_per_bilanzkreis(
+                bilanzkreis_id
+            ) + timedelta(hours=1)
             if last_date_in_db > end:
                 continue
 
@@ -187,18 +195,22 @@ class E2WatchCrawler(ContinuousCrawler, DownloadOnceCrawler):
                 f"There does not exist a table buildings yet. The buildings will now be crawled. {e}"
             )
 
-        df = pd.read_csv(Path(__file__).parent / "data" /"e2watch_building_data.csv")
+        df = pd.read_csv(Path(__file__).parent / "data" / "e2watch_building_data.csv")
         df = df.set_index(["bilanzkreis_id"])
         return df
 
-    def get_data_per_building(self, bilanzkreis_id: str, begin: datetime, end: datetime) -> pd.DataFrame:
+    def get_data_per_building(
+        self, bilanzkreis_id: str, begin: datetime, end: datetime
+    ) -> pd.DataFrame:
         energy = ["strom", "wasser", "waerme"]
         begin_str = begin.strftime("%d.%m.%Y")
         end_str = end.strftime("%d.%m.%Y")
-    
+
         df_last = pd.DataFrame([])
         for measurement in energy:
-            log.debug("Downloading data for building: %s and %s", bilanzkreis_id, measurement)
+            log.debug(
+                "Downloading data for building: %s and %s", bilanzkreis_id, measurement
+            )
             url = f"https://stadt-aachen.e2watch.de/gebaeude/getMainChartData/{bilanzkreis_id}?medium={measurement}&from={begin_str}&to={end_str}&type=stundenverbrauch"
             log.info(url)
             response = requests.get(url)
@@ -221,47 +233,45 @@ class E2WatchCrawler(ContinuousCrawler, DownloadOnceCrawler):
                     else measurement + "_m3"
                 ),
             ]
-            temperature = pd.DataFrame.from_dict(
-                data["result"]["series"][1]["data"]
-            )
+            temperature = pd.DataFrame.from_dict(data["result"]["series"][1]["data"])
             if temperature.empty:
-                log.info(
-                    f"Received empty temperature for building: {bilanzkreis_id}"
-                )
+                log.info(f"Received empty temperature for building: {bilanzkreis_id}")
                 continue
             temperature[0] = pd.to_datetime(temperature[0], unit="ms", utc=True)
             temperature.columns = ["timestamp", "temperatur"]
             timeseries = pd.merge(timeseries, temperature, on=["timestamp"])
 
             if not df_last.empty:
-                df_last = pd.merge(
-                    timeseries, df_last, on=["timestamp", "temperatur"]
-                )
+                df_last = pd.merge(timeseries, df_last, on=["timestamp", "temperatur"])
 
             else:
                 df_last = timeseries
 
         if not df_last.empty:
             df_last.insert(0, "bilanzkreis_id", bilanzkreis_id)
-            df_last = df_last.set_index(
-                ["timestamp", "bilanzkreis_id"]
-            )
+            df_last = df_last.set_index(["timestamp", "bilanzkreis_id"])
         return df_last
 
     def select_latest_per_bilanzkreis(self, bilanzkreis_id) -> datetime:
-        sql = text(f"select timestamp from e2watch where bilanzkreis_id='{bilanzkreis_id}' order by timestamp desc limit 1")
+        sql = text(
+            f"select timestamp from e2watch where bilanzkreis_id='{bilanzkreis_id}' order by timestamp desc limit 1"
+        )
         try:
             with self.engine.connect() as conn:
                 latest = conn.execute(sql).scalar() or TEMPORAL_START
-            log.info(f"The latest date in the database for %s is %s", bilanzkreis_id, latest)
+            log.info(
+                "The latest date in the database for %s is %s", bilanzkreis_id, latest
+            )
             return latest
         except Exception as e:
-            log.info(f"Using the default start date: %s", e)
+            log.info("Using the default start date: %s", e)
             return TEMPORAL_START
+
 
 if __name__ == "__main__":
     logging.basicConfig(filename="e2watch.log", encoding="utf-8", level=logging.INFO)
     from pathlib import Path
+
     config = load_config(Path(__file__).parent.parent / "config.yml")
     e2watch = E2WatchCrawler("e2watch", config=config)
     e2watch.crawl_structural(recreate=False)

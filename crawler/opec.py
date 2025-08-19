@@ -75,11 +75,16 @@ def crawl_opec_data():
     start = df.index[0].strftime("%Y-%m-%d")
     end = df.index[-1].strftime("%Y-%m-%d")
     # Download USD/EUR exchange rate data
+
+    yahoo_crude_oil = yf.download("CL=F", start=start, end=end)
     usdeur = yf.download("USDEUR=X", start=start, end=end)
     df.index.rename("date", inplace=True)
     df.rename(columns={"val": "usd_per_barrel"}, inplace=True)
     # fill missing index values in opec_price which are missing in yahoo finance data
     df["usd_eur"] = usdeur["Close"]["USDEUR=X"].reindex(df.index).bfill().ffill()
+    df["yahoo_usd_per_barrel"] = (
+        yahoo_crude_oil["Close"]["CL=F"].reindex(df.index).bfill().ffill()
+    )
     df["euro_per_barrel"] = df["usd_eur"] * df["usd_per_barrel"]
     # convert euro/barrel to euro/kWh (thermal)
     # 159L, 10kWh/L
@@ -97,9 +102,11 @@ class OpecDownloader(DownloadOnceCrawler):
 
     def crawl_structural(self, recreate: bool = False):
         if not self.structure_exists() or recreate:
+            log.info("Downloading OPEC data")
             df = crawl_opec_data()
             with self.engine.begin() as conn:
                 df.to_sql("opec", conn, if_exists="replace", index=True)
+            log.info("Finished writing OPEC data")
 
         self.create_hypertable_if_not_exists()
 

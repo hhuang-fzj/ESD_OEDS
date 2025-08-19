@@ -18,8 +18,6 @@ from sqlalchemy import text
 from common.base_crawler import ContinuousCrawler, load_config
 
 log = logging.getLogger("smard")
-default_start_date = "2024-06-02 22:00:00"  # "2023-11-26 22:45:00"
-
 
 metadata_info = {
     "schema_name": "smard",

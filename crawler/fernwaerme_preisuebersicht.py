@@ -7,8 +7,9 @@ import logging
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+from sqlalchemy import text
 
-from common.base_crawler import BaseCrawler
+from common.base_crawler import DownloadOnceCrawler, load_config
 
 log = logging.getLogger("iwu")
 log.setLevel(logging.INFO)
@@ -27,16 +28,33 @@ metadata_info = {
 }
 
 
-class FWCrawler(BaseCrawler):
-    def __init__(self, schema_name):
-        super().__init__(schema_name)
+class FWCrawler(DownloadOnceCrawler):
+    def structure_exists(self) -> bool:
+        try:
+            query = text("SELECT 1 from fernwaerme_preisuebersicht limit 1")
+            with self.engine.connect() as conn:
+                return conn.execute(query).scalar() == 1
+        except Exception:
+            return False
 
-    def pull_data(self):
+    def crawl_structural(self, recreate: bool = False):
+        if not self.structure_exists() or recreate:
+            log.info("downloading fernwaerme data")
+            data = self.download_waerme_preise()
+            with self.engine.begin() as conn:
+                tbl_name = "fernwaerme_preisuebersicht"
+                data.to_sql(tbl_name, conn, if_exists="replace")
+            log.info("finished writing fernwaerme data")
+
+    def download_waerme_preise(self):
         url = "https://waermepreise.info"
         response = requests.get(url)
         soup = BeautifulSoup(response.content, "html.parser")
 
         table = soup.find("table")
+
+        if not table:
+            raise Exception("no html table found")
         headers = [header.text.strip() for header in table.find_all("th")]
 
         rows = []
@@ -169,17 +187,11 @@ class FWCrawler(BaseCrawler):
 
         return df
 
-    def write_to_sql(self, data):
-        with self.engine.begin() as conn:
-            tbl_name = "fernwaerme_preisuebersicht"
-            data.to_sql(tbl_name, conn, if_exists="replace")
-
-
-def main(schema_name):
-    iwu = FWCrawler(schema_name)
-    data = iwu.pull_data()
-    iwu.write_to_sql(data)
-
 
 if __name__ == "__main__":
-    main("fernwaerme_preisuebersicht")
+    logging.basicConfig()
+    from pathlib import Path
+
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    craw = FWCrawler("fernwaerme_preisuebersicht", config)
+    craw.crawl_structural(recreate=False)

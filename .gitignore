@@ -15,7 +15,7 @@ ninja_*
 /axxteq
 /env/
 .env
-
+*.db
 crawler/data/Waermebedarf_NRW.gdb/
 data/pgadmin
 data/open-data-ha/data

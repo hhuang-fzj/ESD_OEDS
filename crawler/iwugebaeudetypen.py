@@ -145,7 +145,7 @@ class IwuCrawler(DownloadOnceCrawler):
         if not self.structure_exists() or recreate:
             log.info("Crawling IWU")
 
-            data = craw.pull_data()
+            data = self.pull_data()
             with self.engine.begin() as conn:
                 data.to_sql("iwu_typgebäude", conn, if_exists="replace")
 

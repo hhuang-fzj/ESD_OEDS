@@ -14,12 +14,12 @@ This dataset is typically used for NILM applications (non-intrusive load monitor
 import io
 import logging
 
+import cloudscraper
 import pandas as pd
 import py7zr
-import requests
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
-from common.config import db_uri
+from common.base_crawler import DownloadOnceCrawler, load_config
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
@@ -40,38 +40,53 @@ metadata_info = {
 REFIT_URL = (
     "https://pure.strath.ac.uk/ws/portalfiles/portal/52873459/Processed_Data_CSV.7z"
 )
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+}
 
 
-def main(schema_name):
-    log.info("Download refit dataset")
-    response = requests.get(REFIT_URL)
-    log.info("Write refit to database")
-    engine = create_engine(db_uri(schema_name))
-    with py7zr.SevenZipFile(io.BytesIO(response.content), mode="r") as z:
-        names = z.getnames()
-        # files = z.readall()
-        for name in names:
-            file = z.read([name])[name]
-            df = pd.read_csv(file, index_col="Time", parse_dates=["Time"])
-            del df["Unix"]
-            df["house"] = name
-            log.info(f"writing {name}")
+class RefitCrawler(DownloadOnceCrawler):
+    def structure_exists(self) -> bool:
+        try:
+            query = text("SELECT 1 from refit limit 1")
+            with self.engine.connect() as conn:
+                return conn.execute(query).scalar() == 1
+        except Exception:
+            return False
 
-            with engine.begin() as conn:
-                df.to_sql("refit", conn, if_exists="append")
-    log.info("Finished writing REFIT to Database")
+    def crawl_structural(self, recreate: bool = False):
+        if not self.structure_exists() or recreate:
+            log.info("Download refit dataset")
+            self.download_refit_data()
+            log.info("Finished writing REFIT to Database")
+        self.create_hypertable_if_not_exists()
 
-    try:
-        query = text(
-            "select public.create_hypertable('refit.refit', 'Time', if_not_exists => TRUE, migrate_data => TRUE)"
-        )
-        with engine.begin() as conn:
-            conn.execute(query)
-        log.error("successfully created hypertable for REFIT")
-    except Exception:
-        log.error("could not create hypertable for REFIT")
+    def create_hypertable_if_not_exists(self):
+        self.create_single_hypertable_if_not_exists("refit", "Time")
+
+    def download_refit_data(self):
+        # 2025-08-19 this only works with cloudflare circumvention
+        scraper = cloudscraper.create_scraper()
+        response = scraper.get(REFIT_URL, headers=headers)
+        response.raise_for_status()
+        log.info("Write refit to database")
+        with py7zr.SevenZipFile(io.BytesIO(response.content), mode="r") as z:
+            names = z.getnames()
+            for name in names:
+                file = z.read([name])[name]
+                df = pd.read_csv(file, index_col="Time", parse_dates=["Time"])
+                del df["Unix"]
+                df["house"] = name
+                log.info(f"writing {name}")
+
+                with self.engine.begin() as conn:
+                    df.to_sql("refit", conn, if_exists="append", chunksize=10000)
 
 
 if __name__ == "__main__":
     logging.basicConfig()
-    main("refit")
+    from pathlib import Path
+
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    craw = RefitCrawler("refit", config)
+    craw.crawl_structural()

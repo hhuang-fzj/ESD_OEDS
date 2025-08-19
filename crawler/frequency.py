@@ -10,8 +10,7 @@ import pandas as pd
 import requests
 from sqlalchemy import text
 
-from common.base_crawler import BaseCrawler
-from common.config import db_uri
+from common.base_crawler import DownloadOnceCrawler, load_config
 
 log = logging.getLogger("frequency")
 log.setLevel(logging.INFO)
@@ -43,13 +42,23 @@ def download_extract_zip(url):
                 yield zipinfo.filename, thefile, len(thezip.infolist())
 
 
-class FrequencyCrawler(BaseCrawler):
-    def __init__(self, schema_name):
-        super().__init__(schema_name)
+class FrequencyCrawler(DownloadOnceCrawler):
+    def structure_exists(self) -> bool:
+        try:
+            query = text("SELECT 1 from frequency limit 1")
+            with self.engine.connect() as conn:
+                return conn.execute(query).scalar() == 1
+        except Exception:
+            return False
+
+    def crawl_structural(self, recreate: bool = False):
+        if not self.structure_exists() or recreate:
+            self.crawl_frequency()
+        self.create_hypertable_if_not_exists()
 
     def crawl_year_by_url(self, url):
         for name, thefile, count in download_extract_zip(url):
-            log.info(name)
+            log.info("file %s", name)
             if count == 1:  # only 2010
                 df = pd.read_csv(
                     thefile,
@@ -60,7 +69,9 @@ class FrequencyCrawler(BaseCrawler):
                     # index_col='date',
                     # parse_dates=['date_time']
                 )
-                df.index = pd.to_datetime(df["date_time"], format="%d.%m.%Y %H:%M:%S")
+                df.index = pd.to_datetime(
+                    df.pop("date_time"), format="%d.%m.%Y %H:%M:%S"
+                )
 
                 del df["date_time"]
             else:
@@ -68,44 +79,39 @@ class FrequencyCrawler(BaseCrawler):
                     thefile,
                     sep=",",
                     header=None,
-                    parse_dates=[[0, 1]],
                 )
-                if len(df.columns) == 3:
+                # timestamps like 2013/10/27 2A:00:00 can't be read
+                df.index = pd.to_datetime(df.pop(0) + " " + df.pop(1), errors="coerce")
+
+                if len(df.columns) == 2:
+                    # delete the all "Frequ" column
                     del df[2]
-                df.columns = ["date_time", "frequency"]
-                df.set_index("date_time")
+                df.columns = ["frequency"]
             try:
                 with self.engine.begin() as conn:
-                    df.to_sql("frequency", conn, if_exists="append")
+                    df.to_sql("frequency", conn, if_exists="append", chunksize=10000)
             except Exception as e:
                 log.error(f"Error: {e}")
 
     def crawl_frequency(self, first=2011, last=2020):
         for year in range(first, last + 1):
-            log.info(year)
+            log.info("crawling the year %s", year)
             url = f"https://www.50hertz.com/Portals/1/Dokumente/Transparenz/Regelenergie/Archiv%20Netzfrequenz/Netzfrequenz%20{year}.zip"
             self.crawl_year_by_url(url)
 
-    def create_hypertable(self):
-        try:
-            with self.engine.begin() as conn:
-                query = text(
-                    "SELECT public.create_hypertable('frequency', 'date_time', if_not_exists => TRUE, migrate_data => TRUE);"
-                )
-                conn.execute(query)
-            log.info("created hypertable frequency")
-        except Exception as e:
-            log.error(f"could not create hypertable: {e}")
-
-
-def main(db_uri):
-    fc = FrequencyCrawler(db_uri)
-    fc.crawl_frequency(first=2014)
-    fc.create_hypertable()
+    def create_hypertable_if_not_exists(self):
+        self.create_single_hypertable_if_not_exists("frequency", "date_time")
 
 
 if __name__ == "__main__":
     logging.basicConfig()
+    from pathlib import Path
+
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    craw = FrequencyCrawler("frequency", config)
+    craw.crawl_structural(recreate=False)
+    #craw.crawl_frequency(2013, 2020)
+
     if False:
         year = 2010
         thefile = "Netzfrequenz 2019/201901_Frequenz.csv"
@@ -122,10 +128,6 @@ if __name__ == "__main__":
         df = pd.read_sql(sql, conn)
         plt.plot(df["date_time"], df["frequency"])
 
-    conn_uri = db_uri("frequency")
-    log.info(f"connect to {conn_uri}")
-    fc = FrequencyCrawler("frequency")
-    # fc.crawl_frequency(first=2014)
-    year = 2015
-    url = f"https://www.50hertz.com/Portals/1/Dokumente/Transparenz/Regelenergie/Archiv%20Netzfrequenz/Netzfrequenz%20{year}.zip"
-    fc.crawl_year_by_url(url)
+        year = 2015
+        url = f"https://www.50hertz.com/Portals/1/Dokumente/Transparenz/Regelenergie/Archiv%20Netzfrequenz/Netzfrequenz%20{year}.zip"
+        fc.crawl_year_by_url(url)

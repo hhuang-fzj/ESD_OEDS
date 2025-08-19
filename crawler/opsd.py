@@ -3,15 +3,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import logging
-import os.path as osp
 import sqlite3
+from io import StringIO
+from pathlib import Path
 
 import pandas as pd
 import requests
-from sqlalchemy import create_engine
+from sqlalchemy import text
 
-from common.base_crawler import create_schema_only, set_metadata_only
-from common.config import db_uri
+from common.base_crawler import DownloadOnceCrawler, load_config
 
 log = logging.getLogger("opsd")
 log.setLevel(logging.INFO)
@@ -28,43 +28,76 @@ metadata_info = {
 }
 
 
-when2heat_path = osp.join(osp.dirname(__file__), "data/when2heat.db")
+when2heat_path = Path(__file__).parent.parent / "when2heat.db"
 when2heat_url = (
     "https://data.open-power-system-data.org/when2heat/latest/when2heat.sqlite"
 )
+national_generation_capacity_url = "https://data.open-power-system-data.org/national_generation_capacity/2020-10-01/national_generation_capacity_stacked.csv"
 
 
-def write_when2_heat(engine, db_path=when2heat_path):
-    """
-    efficiency of heat pumps in different countries for different types of heatpumps
-    """
-    if osp.isfile(db_path):
-        log.info(f"{db_path} already exists")
-    else:
-        when2heat_file = requests.get(when2heat_url)
-        with open(when2heat_path, "wb") as f:
-            f.write(when2heat_file.content)
-        log.info(f"downloaded when2heat.db to {db_path}")
+class OpsdCrawler(DownloadOnceCrawler):
+    def structure_exists(self) -> bool:
+        try:
+            query = text("SELECT 1 from national_generation_capacity limit 1")
+            with self.engine.connect() as conn:
+                return conn.execute(query).scalar() == 1
+        except Exception:
+            return False
 
-    conn = sqlite3.connect(when2heat_path)
+    def crawl_structural(self, recreate: bool = False):
+        if not self.structure_exists() or recreate:
+            self.crawl_capacities()
+            self.write_when2_heat()
+        self.create_hypertable_if_not_exists()
 
-    data = pd.read_sql("select * from when2heat", conn)
-    data.index = pd.to_datetime(data["utc_timestamp"])
-    data["cet_cest_timestamp"] = pd.to_datetime(data["cet_cest_timestamp"])
-    del data["utc_timestamp"]
-    log.info("data read successfully")
+    def create_hypertable_if_not_exists(self):
+        self.create_single_hypertable_if_not_exists("when2heat", "utc_timestamp")
 
-    data.to_sql("when2heat", engine, if_exists="replace")
-    log.info("data written successfully")
+    def write_when2_heat(self, db_path: Path = when2heat_path):
+        """
+        efficiency of heat pumps in different countries for different types of heatpumps
+        """
+        if db_path.is_file():
+            log.info(f"{db_path} already exists")
+        else:
+            when2heat_file = requests.get(when2heat_url)
+            with open(db_path, "wb") as f:
+                f.write(when2heat_file.content)
+            log.info(f"downloaded when2heat.db to {db_path}")
 
+        with sqlite3.connect(db_path) as conn:
+            data = pd.read_sql("select * from when2heat", conn)
+        data.index = pd.to_datetime(data["utc_timestamp"])
+        data["cet_cest_timestamp"] = pd.to_datetime(data["cet_cest_timestamp"])
+        del data["utc_timestamp"]
+        log.info("data read successfully")
 
-def main(schema_name):
-    engine = create_engine(db_uri(schema_name))
-    create_schema_only(engine, schema_name)
-    write_when2_heat(engine)
-    set_metadata_only(engine, metadata_info)
+        with self.engine.begin() as conn:
+            data.to_sql("when2heat", conn, if_exists="replace", chunksize=20000)
+        log.info("when2heat data written successfully")
+
+    def crawl_capacities(self):
+        log.info("Fetching data from %s", national_generation_capacity_url)
+        response = requests.get(national_generation_capacity_url)
+        response.raise_for_status()
+
+        log.info("Loading OPSD capacities into DataFrame")
+        data = pd.read_csv(StringIO(response.text))
+
+        log.info("Writing OPSD capacities to the database")
+        with self.engine.begin() as conn:
+            data.to_sql(
+                "national_generation_capacity",
+                conn,
+                if_exists="replace",
+            )
+        log.info("OPSD capacities written successfully")
 
 
 if __name__ == "__main__":
     logging.basicConfig()
-    main("opsd")
+    from pathlib import Path
+
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    craw = OpsdCrawler("opsd", config)
+    craw.crawl_structural(recreate=True)

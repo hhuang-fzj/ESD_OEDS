@@ -9,11 +9,13 @@ import numpy as np
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup  # parse html
-from sqlalchemy import create_engine
+from sqlalchemy import text
 from tqdm import tqdm  # fancy for loop
 
-from common.base_crawler import create_schema_only, set_metadata_only
-from common.config import db_uri
+from common.base_crawler import (
+    DownloadOnceCrawler,
+    load_config,
+)
 
 """
 Downloads the available powercurve data from https://www.wind-turbine-models.com/ to a csv file
@@ -58,7 +60,7 @@ def get_turbines_with_power_curve():
     return wind_turbines_with_curve
 
 
-def download_turbine_curve(turbine_id, start=0, stop=25):
+def download_turbine_curve(turbine_id, start=0, stop=25) -> pd.DataFrame:
     url = "https://www.wind-turbine-models.com/powercurves"
     headers = dict()
     headers["Content-Type"] = "application/x-www-form-urlencoded"
@@ -88,7 +90,7 @@ def download_turbine_curve(turbine_id, start=0, stop=25):
     return df
 
 
-def download_all_turbines():
+def download_all_turbines() -> pd.DataFrame:
     wind_turbines = get_turbines_with_power_curve()
     curves = []
     for turbine_id in tqdm(wind_turbines):
@@ -98,23 +100,35 @@ def download_all_turbines():
     all_turbines_trunc = df[df.any(axis=1)]
     df = all_turbines_trunc.fillna(0)
     df[df < 0] = 0
-    return df
+    # Vestas V27 exists twice in column names
+    return df.loc[:, ~df.columns.duplicated()]
 
 
-def main(schema_name):
-    engine = create_engine(db_uri(schema_name))
-    create_schema_only(engine, schema_name)
-    turbine_data = download_all_turbines()
-    turbine_data.to_sql("turbine_data", engine, if_exists="replace")
-    set_metadata_only(engine, metadata_info)
-    return turbine_data
+class WindTurbineCrawler(DownloadOnceCrawler):
+    def structure_exists(self) -> bool:
+        try:
+            query = text("SELECT 1 from turbine_data limit 1")
+            with self.engine.connect() as conn:
+                return conn.execute(query).scalar() == 1
+        except Exception:
+            return False
+
+    def crawl_structural(self, recreate: bool = False):
+        if not self.structure_exists() or recreate:
+            wind_turbines = download_all_turbines()
+            with self.engine.begin() as conn:
+                wind_turbines.to_sql("turbine_data", conn, if_exists="replace")
 
 
 if __name__ == "__main__":
     logging.basicConfig()
-    wind_turbines = get_turbines_with_power_curve()
-    turbine_data = main("windmodel")
+    from pathlib import Path
 
-    with open("turbine_data.csv", "w") as f:
-        turbine_data.to_csv(f)
-    turbine_data = pd.read_csv("turbine_data.csv", index_col=0)
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    craw = WindTurbineCrawler("windmodel", config)
+    craw.crawl_structural(recreate=False)
+
+    # turbine_data = download_all_turbines()
+    # with open("turbine_data.csv", "w") as f:
+    #     turbine_data.to_csv(f)
+    # turbine_data = pd.read_csv("turbine_data.csv", index_col=0)

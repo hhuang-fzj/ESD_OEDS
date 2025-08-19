@@ -7,7 +7,7 @@ import requests
 from sqlalchemy import text
 from tqdm import tqdm
 
-from common.base_crawler import BaseCrawler
+from common.base_crawler import DownloadOnceCrawler, load_config
 
 log = logging.getLogger("vea-industrial-load-profiles")
 
@@ -31,11 +31,39 @@ metadata_info = {
 }
 
 
-class IndustrialLoadProfileCrawler(BaseCrawler):
-    def __init__(self, schema_name):
-        super().__init__(schema_name)
+class IndustrialLoadProfileCrawler(DownloadOnceCrawler):
+    def structure_exists(self) -> bool:
+        try:
+            query = text("SELECT 1 from consumption limit 1")
+            with self.engine.connect() as conn:
+                return conn.execute(query).scalar() == 1
+        except Exception:
+            return False
 
-        self.schema_name = schema_name
+    def crawl_structural(self, recreate: bool = False):
+        if not self.structure_exists() or recreate:
+            # request zip archive
+            self.request_extract_zip_archive()
+
+            # read load_data
+            self.read_file(filename="load")
+
+            # create timestamp dictionary to replace "timeX" with datetime object
+            self.create_timestep_datetime_dict(self.df.columns)
+
+            # transform and write load data
+            self.transform_load_hlt_data(name="load")
+            self.write_to_database(name="load")
+
+            # read, transform and write hlt data
+            self.read_file(filename="hlt")
+            self.transform_load_hlt_data(name="hlt")
+            self.write_to_database(name="high_load_times")
+
+            # read in master data and write to database
+            self.read_file(filename="master")
+            self.lower_column_names()
+            self.write_to_database(name="master")
 
     def request_extract_zip_archive(self):
         """
@@ -152,62 +180,9 @@ class IndustrialLoadProfileCrawler(BaseCrawler):
     def lower_column_names(self):
         self.df.columns = [x.lower() for x in self.df.columns]
 
-    def convert_to_hypertable(self, relation_name: str):
-        """
-        Converts table to hypertable.
-
-        Args:
-            relation_name (str): The relation to convert to hypertable.
-        """
-
-        log.info("Trying to create hypertable")
-
-        try:
-            with self.engine.begin() as conn:
-                query = text(
-                    f"SELECT public.create_hypertable('{relation_name}', 'timestamp', if_not_exists => TRUE, migrate_data => TRUE);"
-                )
-                conn.execute(query)
-
-            log.info("Succesfully create hypertable")
-
-        except Exception as e:
-            log.error(f"Could not create hyptertable for {relation_name}: {e}")
-
-
-def main():
-    # create crawler instance
-    ilp_crawler = IndustrialLoadProfileCrawler("vea_industrial_load_profiles")
-
-    # request zip archive
-    ilp_crawler.request_extract_zip_archive()
-
-    # read load_data
-    ilp_crawler.read_file(filename="load")
-
-    # create timestamp dictionary to replace "timeX" with datetime object
-    ilp_crawler.create_timestep_datetime_dict(ilp_crawler.df.columns)
-
-    # transform and write load data
-    ilp_crawler.transform_load_hlt_data(name="load")
-    ilp_crawler.write_to_database(name="load")
-
-    # read, transform and write hlt data
-    ilp_crawler.read_file(filename="hlt")
-    ilp_crawler.transform_load_hlt_data(name="hlt")
-    ilp_crawler.write_to_database(name="high_load_times")
-
-    # read in master data and write to database
-    ilp_crawler.read_file(filename="master")
-    ilp_crawler.lower_column_names()
-    ilp_crawler.write_to_database(name="master")
-
-    # convert to hypertable
-    ilp_crawler.convert_to_hypertable("high_load_times")
-    ilp_crawler.convert_to_hypertable("load")
-
-    # set metadata
-    ilp_crawler.set_metadata(metadata_info)
+    def create_hypertable_if_not_exists(self):
+        self.create_single_hypertable_if_not_exists("high_load_times", "timestamp")
+        self.create_single_hypertable_if_not_exists("load", "timestamp")
 
 
 if __name__ == "__main__":
@@ -216,5 +191,9 @@ if __name__ == "__main__":
         format="%(asctime)s.%(msecs)03d %(levelname)s %(module)s - %(funcName)s: %(message)s",
         datefmt="%d-%m-%Y %H:%M:%S",
     )
+    from pathlib import Path
 
-    main()
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    crawler = IndustrialLoadProfileCrawler("vea_industrial_load_profiles", config)
+    crawler.crawl_structural()
+    crawler.set_metadata(metadata_info)

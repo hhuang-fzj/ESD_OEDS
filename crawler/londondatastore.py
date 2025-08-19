@@ -16,10 +16,9 @@ import zipfile
 
 import pandas as pd
 import requests
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
-from common.base_crawler import create_schema_only, set_metadata_only
-from common.config import db_uri
+from common.base_crawler import DownloadOnceCrawler, load_config
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
@@ -40,44 +39,54 @@ LONDON_FULL_URL = "https://data.london.gov.uk/download/smartmeter-energy-use-dat
 LONDON_PARTITIONED_URL = "https://data.london.gov.uk/download/smartmeter-energy-use-data-in-london-households/04feba67-f1a3-4563-98d0-f3071e3d56d1/Partitioned%20LCL%20Data.zip"
 
 
-def main(schema_name):
-    engine = create_engine(db_uri(schema_name))
-    log.info("Download london smartmeter energy dataset")
-    response = requests.get(LONDON_PARTITIONED_URL)
-    create_schema_only(engine, schema_name)
-    log.info("Write dataset to database")
-    with zipfile.ZipFile(io.BytesIO(response.content)) as thezip:
-        # should be single file only if full_data
-        for zipinfo in thezip.infolist():
-            with thezip.open(zipinfo) as thefile:
-                df = pd.read_csv(
-                    thefile, parse_dates=["DateTime"], index_col="DateTime"
-                )
+class LondonLoadData(DownloadOnceCrawler):
+    def structure_exists(self) -> bool:
+        try:
+            query = text("SELECT 1 from consumption limit 1")
+            with self.engine.connect() as conn:
+                return conn.execute(query).scalar() == 1
+        except Exception:
+            return False
 
-                df.columns = [col.strip() for col in df.columns]
-                df.rename(
-                    columns={
-                        "KWH/hh (per half hour)": "power",
-                        "stdorToU": "tariff",
-                    },
-                    inplace=True,
-                )
-                with engine.begin() as conn:
-                    df.to_sql("consumption", conn, if_exists="append")
-    log.info("Finished writing london smartmeter energy dataset to Database")
+    def crawl_structural(self, recreate: bool = False):
+        if not self.structure_exists() or recreate:
+            self.download_london_data()
+        self.create_hypertable_if_not_exists()
 
-    try:
-        query = text(
-            "select public.create_hypertable('londondatastore.consumption', 'Time', if_not_exists => TRUE, migrate_data => TRUE)"
-        )
-        with engine.begin() as conn:
-            conn.execute(query)
-        log.error("successfully created hypertable for londondatastore")
-    except Exception:
-        log.error("could not create hypertable for londondatastore")
-    set_metadata_only(engine, metadata_info)
+    def download_london_data(self):
+        log.info("Download london smartmeter energy dataset")
+        response = requests.get(LONDON_PARTITIONED_URL)
+        with zipfile.ZipFile(io.BytesIO(response.content)) as thezip:
+            # should be single file only if full_data
+            log.info("Write london energy dataset to database")
+            for zipinfo in thezip.infolist():
+                with thezip.open(zipinfo) as thefile:
+                    df = pd.read_csv(
+                        thefile, parse_dates=["DateTime"], index_col="DateTime"
+                    )
+
+                    df.columns = [col.strip() for col in df.columns]
+                    df.rename(
+                        columns={
+                            "KWH/hh (per half hour)": "power",
+                            "stdorToU": "tariff",
+                        },
+                        inplace=True,
+                    )
+                    with self.engine.begin() as conn:
+                        df.to_sql(
+                            "consumption", conn, if_exists="append", chunksize=10000
+                        )
+        log.info("Finished writing london smartmeter energy dataset to Database")
+
+    def create_hypertable_if_not_exists(self) -> None:
+        self.create_single_hypertable_if_not_exists("consumption", "DateTime")
 
 
 if __name__ == "__main__":
     logging.basicConfig()
-    main("londondatastore")
+    from pathlib import Path
+
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    craw = LondonLoadData("londondatastore", config)
+    craw.crawl_structural(recreate=False)
