@@ -32,7 +32,6 @@ Mini Walkthrough
     * `opsd_national_generation_capacity_crawler.py <https://github.com/NOWUM/open-energy-data-server/blob/main/docs/source/minimal_walkthrough/opsd_national_generation_capacity_crawler.py>`_ - Python crawler for national generation capacity.
     * `postgrest_stored_procedure.sql <https://github.com/NOWUM/open-energy-data-server/blob/main/docs/source/minimal_walkthrough/postgrest_stored_procedure.sql>`_ - Stored procedure for PostgREST.
     * `python_postgrest_visualise.py <https://github.com/NOWUM/open-energy-data-server/blob/main/docs/source/minimal_walkthrough/python_postgrest_visualise.py>`_ - Python script for PostgREST visualization.
-    * `walkthrough_util.py <https://github.com/NOWUM/open-energy-data-server/blob/main/docs/source/minimal_walkthrough/walkthrough_util.py>`_ - Utility functions for the walkthrough.
 
 Usage Examples
 ==============
