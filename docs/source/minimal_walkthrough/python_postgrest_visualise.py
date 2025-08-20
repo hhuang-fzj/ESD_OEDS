@@ -42,6 +42,7 @@ def plot_data(data):
     plt.grid(True)
     plt.show()
 
+
 if __name__ == "__main__":
     data = fetch_data()
     schema_data = fetch_data_schema()

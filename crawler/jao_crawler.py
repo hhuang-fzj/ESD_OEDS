@@ -52,7 +52,8 @@ DELTAS = {
     "intraday": relativedelta(days=1),
 }
 
-TEMPORAL_START = datetime(2019,1,1)
+TEMPORAL_START = datetime(2019, 1, 1)
+
 
 def string_to_timestamp(*dates):
     timestamps = []
@@ -141,7 +142,6 @@ class JaoCrawler(ContinuousCrawler):
         except Exception:
             log.error("No intrat_pl data found")
             return TEMPORAL_START
-    def crawl_from_to(self, begin: datetime, end: datetime):
 
     def get_tables(self):
         metadata = MetaData()
@@ -152,7 +152,9 @@ class JaoCrawler(ContinuousCrawler):
         for table_name in self.get_tables():
             self.create_single_hypertable_if_not_exists(table_name, "date")
 
-    def calculate_min_max(self, corridor, horizon="Yearly") -> tuple[datetime, datetime]:
+    def calculate_min_max(
+        self, corridor, horizon="Yearly"
+    ) -> tuple[datetime, datetime]:
         table_name = "auctions"
         try:
             query = text(
@@ -170,7 +172,6 @@ class JaoCrawler(ContinuousCrawler):
             )
             return None, None
 
-
     def crawl_single_horizon(
         self,
         jao_client,
@@ -183,7 +184,9 @@ class JaoCrawler(ContinuousCrawler):
         table_name = table_name.replace("-", "_").replace(" ", "_")
 
         try:
-            auctions_data = jao_client.get_auctions(corridor, from_date, to_date, horizon)
+            auctions_data = jao_client.get_auctions(
+                corridor, from_date, to_date, horizon
+            )
         except Exception as e:
             log.error(f"Did not get Auctions for {corridor} - {horizon}: {e}")
             return
@@ -236,7 +239,9 @@ class JaoCrawler(ContinuousCrawler):
                         chunksize=10_000,
                     )
             except OperationalError:
-                log.error(f"database error writing {len(bids_data)} entries - trying again")
+                log.error(
+                    f"database error writing {len(bids_data)} entries - trying again"
+                )
                 import time
 
                 time.sleep(5)
@@ -249,7 +254,6 @@ class JaoCrawler(ContinuousCrawler):
                         method="multi",
                         chunksize=10_000,
                     )
-
 
     def crawl_from_to(self, begin: datetime, end: datetime):
         jao_client = JaoClientWrapper(self.config.get("jao_api_key"))
@@ -302,4 +306,3 @@ if __name__ == "__main__":
 
     craw.crawl_from_to(from_date, to_date)
     craw.set_metadata(metadata_info)
-

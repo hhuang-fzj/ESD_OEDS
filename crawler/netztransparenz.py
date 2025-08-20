@@ -42,10 +42,13 @@ metadata_info = {
     "concave_hull_geometry": None,
 }
 
+
 def database_friendly(string):
     return string.lower().replace("(", "").replace(")", "").replace(" ", "_")
 
-TEMPORAL_START = datetime(2011,3,31)
+
+TEMPORAL_START = datetime(2011, 3, 31)
+
 
 class NetztransparenzCrawler(ContinuousCrawler):
     TIMEDELTA = timedelta(days=2)
@@ -506,24 +509,26 @@ class NetztransparenzCrawler(ContinuousCrawler):
 
     def create_hypertable_if_not_exists(self) -> None:
         for tablename in [
-                    "prognose_solar",
-                    "prognose_wind",
-                    "hochrechnung_solar",
-                    "hochrechnung_wind",
-                    "vermarktung_inanspruchnahme_ausgleichsenergie",
-                    "redispatch",
-                    "nrv_saldo",
-                    "rz_saldo",
-                    "aktivierte_srl",
-                    "aktivierte_mrl",
-                    "value_of_avoided_activation",
-                ]:
+            "prognose_solar",
+            "prognose_wind",
+            "hochrechnung_solar",
+            "hochrechnung_wind",
+            "vermarktung_inanspruchnahme_ausgleichsenergie",
+            "redispatch",
+            "nrv_saldo",
+            "rz_saldo",
+            "aktivierte_srl",
+            "aktivierte_mrl",
+            "value_of_avoided_activation",
+        ]:
             self.create_single_hypertable_if_not_exists(tablename, "von")
 
     def check_table_exists(self, tablename):
         return sql.inspect(self.engine).has_table(tablename)
 
-    def crawl_temporal(self, begin: datetime | None = None, end: datetime | None = None):
+    def crawl_temporal(
+        self, begin: datetime | None = None, end: datetime | None = None
+    ):
         # TODO begin and end is not respected
         log.error("BEGIN AND END IS CURRENTLY NOT RESPECTED")
         # crawler.check_health()

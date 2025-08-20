@@ -40,8 +40,8 @@ class BaseCrawler:
 
     def create_schema(self, schema_name: str) -> None:
         if self.engine.url.drivername.startswith("postgresql"):
-        with self.engine.begin() as conn:
-            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
+            with self.engine.begin() as conn:
+                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
 
     def set_metadata(self, metadata_info: dict[str, str]) -> None:
         set_metadata_only(self.engine, metadata_info)
