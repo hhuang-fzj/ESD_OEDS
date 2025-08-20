@@ -16,14 +16,14 @@ with the credentials from the previous step.
 import datetime as dt
 import io
 import logging
-import os
 import sys
+from datetime import datetime, timedelta
 
 import pandas as pd
 import requests
 import sqlalchemy as sql
 
-from common.base_crawler import BaseCrawler
+from common.base_crawler import ContinuousCrawler, load_config
 
 log = logging.getLogger("netztransparenz")
 log.setLevel(logging.INFO)
@@ -42,16 +42,26 @@ metadata_info = {
     "concave_hull_geometry": None,
 }
 
+def database_friendly(string):
+    return string.lower().replace("(", "").replace(")", "").replace(" ", "_")
 
-class NetztransparenzCrawler(BaseCrawler):
-    def __init__(self, schema_name):
-        super().__init__(schema_name)
+TEMPORAL_START = datetime(2011,3,31)
 
+class NetztransparenzCrawler(ContinuousCrawler):
+    TIMEDELTA = timedelta(days=2)
+
+    def get_latest_data(self) -> datetime:
+        return TEMPORAL_START
+
+    def get_first_data(self) -> datetime:
+        return TEMPORAL_START
+
+    def initialize_token(self):
         # add your Client-ID and Client-secret from the API Client configuration GUI to
         # your environment variable first
-        IPNT_CLIENT_ID = os.environ.get("IPNT_CLIENT_ID")
-        IPNT_CLIENT_SECRET = os.environ.get("IPNT_CLIENT_SECRET")
 
+        IPNT_CLIENT_ID = self.config.get("ipnt_client_id")
+        IPNT_CLIENT_SECRET = self.config.get("ipnt_client_secret")
         ACCESS_TOKEN_URL = "https://identity.netztransparenz.de/users/connect/token"
 
         # Ask for the token providing above authorization data
@@ -489,15 +499,13 @@ class NetztransparenzCrawler(BaseCrawler):
         try:
             with self.engine.begin() as conn:
                 query = sql.text(f"SELECT max({column_name}) FROM {tablename}")
-                result = conn.execute(query).fetchone()[0]
+                result = conn.execute(query).scalar() or default
                 return result.strftime(api_date_format)
         except Exception:
             return default
 
-    def create_hypertable(self):
-        try:
-            with self.engine.begin() as conn:
-                for tablename in [
+    def create_hypertable_if_not_exists(self) -> None:
+        for tablename in [
                     "prognose_solar",
                     "prognose_wind",
                     "hochrechnung_solar",
@@ -510,43 +518,37 @@ class NetztransparenzCrawler(BaseCrawler):
                     "aktivierte_mrl",
                     "value_of_avoided_activation",
                 ]:
-                    query_create_hypertable = f"SELECT create_hypertable('{tablename}', 'von', if_not_exists => TRUE, migrate_data => TRUE);"
-                    conn.execute(sql.text(query_create_hypertable))
-            log.info("created hypertables for netztransparenz")
-        except Exception as e:
-            log.error(f"could not create hypertable: {e}")
+            self.create_single_hypertable_if_not_exists(tablename, "von")
 
     def check_table_exists(self, tablename):
         return sql.inspect(self.engine).has_table(tablename)
 
-
-def database_friendly(string):
-    return string.lower().replace("(", "").replace(")", "").replace(" ", "_")
-
-
-def main(schema_name):
-    crawler = NetztransparenzCrawler(schema_name)
-
-    # crawler.check_health()
-    if not crawler.check_table_exists("prognose_solar"):
-        log.info("No Solar")
-        crawler.forecast_solar()
-    if not crawler.check_table_exists("prognose_wind"):
-        log.info("No Wind")
-        crawler.forecast_wind()
-    crawler.extrapolation_solar()
-    crawler.extrapolation_wind()
-    crawler.utilization_balancing_energy()
-    crawler.redispatch()
-    crawler.gcc_balance()
-    crawler.lfc_area_balance()
-    crawler.activated_automatic_balancing_capacity()
-    crawler.activated_manual_balancing_capacity()
-    crawler.value_of_avoided_activation()
-    crawler.create_hypertable()
-
-    crawler.set_metadata(metadata_info)
+    def crawl_temporal(self, begin: datetime | None = None, end: datetime | None = None):
+        # TODO begin and end is not respected
+        log.error("BEGIN AND END IS CURRENTLY NOT RESPECTED")
+        # crawler.check_health()
+        if not self.check_table_exists("prognose_solar"):
+            log.info("No Solar")
+            self.forecast_solar()
+        if not self.check_table_exists("prognose_wind"):
+            log.info("No Wind")
+            self.forecast_wind()
+        self.extrapolation_solar()
+        self.extrapolation_wind()
+        self.utilization_balancing_energy()
+        self.redispatch()
+        self.gcc_balance()
+        self.lfc_area_balance()
+        self.activated_automatic_balancing_capacity()
+        self.activated_manual_balancing_capacity()
+        self.value_of_avoided_activation()
 
 
 if __name__ == "__main__":
-    main("netztransparenz")
+    logging.basicConfig()
+    from pathlib import Path
+
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    craw = NetztransparenzCrawler("netztransparenz", config=config)
+    craw.crawl_temporal()
+    craw.set_metadata(metadata_info)
