@@ -29,32 +29,28 @@ TABLE_DATA = {
     "fcr_bedarfe": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=FCR",
     "fcr_ergebnisse": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=FCR",
     "fcr_anonyme_ergebnisse": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=FCR",
-
     # aFRR Capacity
     "afrr_bedarfe_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=aFRR",
     "afrr_ergebnisse_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=aFRR",
     "afrr_anonyme_ergebnisse_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=aFRR",
-
     # mFRR Capacity
     "mfrr_bedarfe_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=mFRR",
     "mfrr_ergebnisse_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=mFRR",
     "mfrr_anonyme_ergebnisse_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=mFRR",
-
     # aFRR Energy
     "afrr_bedarfe_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=aFRR",
     "afrr_ergebnisse_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=aFRR",
     "afrr_anonyme_ergebnisse_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=aFRR",
-
     # mFRR Energy
     "mfrr_bedarfe_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=mFRR",
     "mfrr_ergebnisse_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=mFRR",
     "mfrr_anonyme_ergebnisse_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=mFRR",
-
     # ABLA
     "abla_bedarfe": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=ABLA",
     "abla_ergebnisse": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=ABLA",
-    "abla_anonyme_ergebnisse": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=ABLA"
+    "abla_anonyme_ergebnisse": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=ABLA",
 }
+
 
 def database_friendly(string):
     return (
@@ -415,15 +411,11 @@ def prepare_afrr_mfrr_results_df(df):
     return df_final.reset_index()
 
 
-
 def get_date_column_from_table_name(table_name):
     if "regelarbeit" in table_name:
         return "delivery_date"
     else:
         return "date_from"
-
-
-
 
 
 def get_df_for_date(url, date_to_get: date, table_name: str):
@@ -435,7 +427,9 @@ def get_df_for_date(url, date_to_get: date, table_name: str):
         message="Workbook contains no default style, apply openpyxl's default",
     )
     try:
-        df = pd.read_excel(url_with_date, sheet_name="001", na_values=["-", "n.a.", "n.e."])
+        df = pd.read_excel(
+            url_with_date, sheet_name="001", na_values=["-", "n.a.", "n.e."]
+        )
     except Exception as e:
         raise Exception(f"Could not read Datasheet from URL: {url_with_date}") from e
     df.rename(mapper=lambda x: database_friendly(x), axis="columns", inplace=True)
@@ -479,17 +473,11 @@ def get_df_for_date(url, date_to_get: date, table_name: str):
             if col_to_drop in df.columns:
                 df = df.drop(col_to_drop, axis=1)
 
-    if (
-        "bedarfe" in table_name
-        and df.shape[0] > 0
-    ):
+    if "bedarfe" in table_name and df.shape[0] > 0:
         df = prepare_demands_df(df)
     elif table_name == "fcr_ergebnisse" and df.shape[0] > 0:
         df = prepare_fcr_results_df(df)
-    elif (
-        "ergebnis" in table_name
-        and df.shape[0] > 0
-    ):
+    elif "ergebnis" in table_name and df.shape[0] > 0:
         df = prepare_afrr_mfrr_results_df(df)
 
     df = df.dropna(axis="columns", how="all")
@@ -518,7 +506,8 @@ def get_df_for_date(url, date_to_get: date, table_name: str):
     return df
 
 
-TEMPORAL_START = date(2020,2,1)
+TEMPORAL_START = date(2020, 2, 1)
+
 
 class RegelleistungCrawler(ContinuousCrawler):
     TIMEDELTA = timedelta(days=2)
@@ -531,7 +520,9 @@ class RegelleistungCrawler(ContinuousCrawler):
                 latest_datetime = conn.execute(query).scalar()
                 if not latest_datetime:
                     return TEMPORAL_START
-                return date(latest_datetime.year, latest_datetime.month, latest_datetime.day)
+                return date(
+                    latest_datetime.year, latest_datetime.month, latest_datetime.day
+                )
         except Exception:
             log.error("No data found for %s", table_name)
             return TEMPORAL_START
@@ -544,7 +535,11 @@ class RegelleistungCrawler(ContinuousCrawler):
                 earliest_datetime = conn.execute(query).scalar()
                 if not earliest_datetime:
                     return TEMPORAL_START
-                return date(earliest_datetime.year, earliest_datetime.month, earliest_datetime.day)
+                return date(
+                    earliest_datetime.year,
+                    earliest_datetime.month,
+                    earliest_datetime.day,
+                )
         except Exception:
             log.error("No data found for %s", table_name)
             return TEMPORAL_START
@@ -562,7 +557,6 @@ class RegelleistungCrawler(ContinuousCrawler):
             complete_data = pd.concat([prev, new_data])
             complete_data.to_sql(table_name, conn, if_exists="replace", index=False)
 
-
     def write_past_entries(
         self,
         table_name,
@@ -572,7 +566,6 @@ class RegelleistungCrawler(ContinuousCrawler):
     ):
         data_for_date_exists = True
         wrote_data = False
-        start_date = earliest_date - timedelta(days=1)
 
         while data_for_date_exists and (earliest_date_to_write < earliest_date):
             try:
@@ -608,14 +601,12 @@ class RegelleistungCrawler(ContinuousCrawler):
         else:
             log.info(f"No past data was written for {table_name}")
 
-
     def create_table_and_write_past_data(
         self, url, table_name, earliest_date_to_write=TEMPORAL_START
     ):
         log.info(f"Start creating table {table_name} and adding new data")
         earliest_date = date.today()
         self.write_past_entries(table_name, url, earliest_date, earliest_date_to_write)
-
 
     def add_additional_past_entries(
         self, table_name, url, earliest_date_to_write=TEMPORAL_START
@@ -624,8 +615,9 @@ class RegelleistungCrawler(ContinuousCrawler):
         earliest_date = self.get_first_data(table_name)
         self.write_past_entries(table_name, url, earliest_date, earliest_date_to_write)
 
-
-    def write_new_data_from_latest_date_to_today(self, url, table_name, latest_data_date):
+    def write_new_data_from_latest_date_to_today(
+        self, url, table_name, latest_data_date
+    ):
         log.info(f"Start writing new data to {table_name}")
 
         today_date = date.today()
@@ -653,7 +645,6 @@ class RegelleistungCrawler(ContinuousCrawler):
                 f"Finished writing new data to {table_name} with newest date being yesterday {(latest_data_date - timedelta(days=1))}"
             )
 
-
     def write_data_in_table(
         self,
         table_name,
@@ -665,19 +656,19 @@ class RegelleistungCrawler(ContinuousCrawler):
         if latest_date is not None:
             self.write_new_data_from_latest_date_to_today(url, table_name, latest_date)
             if write_additional_past_entries_if_any:
-                self.add_additional_past_entries(table_name, url, earliest_date_to_write)
+                self.add_additional_past_entries(
+                    table_name, url, earliest_date_to_write
+                )
         else:
             self.create_table_and_write_past_data(
                 url, table_name, earliest_date_to_write
             )
 
-    def crawl_temporal(
-        self, begin: date | None = None, end: date | None = None
-    ):
+    def crawl_temporal(self, begin: date | None = None, end: date | None = None):
         # TODO refactoring, begin and end is not respected
         for table_name, url in TABLE_DATA.items():
             self.write_data_in_table(table_name, url)
-        
+
         self.create_hypertable_if_not_exists()
 
     def create_hypertable_if_not_exists(self) -> None:

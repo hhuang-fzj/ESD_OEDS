@@ -31,3 +31,4 @@ sqlalchemy
 swifter
 tqdm
 yfinance
+xarray

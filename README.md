@@ -86,15 +86,7 @@ Coordinate transformations and other geospatial operations are also possible wit
 Do you know of other interesting open-access databases which are worth mentioning here?
 Maybe some are too volatile, large or unknown and are therefore not useful to store in the [OEP](https://openenergy-platform.org/).
 
-Just send a PR and add a new file in the crawler folder with the main method signature as
-
-```
-def main(db_uri):
-    pass
-```
-
-If your tables should be stored in a new database, you have to add your database to the [init.sql](./init.sql) script too.
-
+Just send a PR and add a new file in the crawler folder with your implemented `ContinuousCrawler` or `DownloadOnceCrawler` and add it to the repository.
 
 ## Citation
 
