@@ -1,14 +1,14 @@
 # SPDX-FileCopyrightText: Christoph Komanns
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
-from io import BytesIO
 import logging
+from io import BytesIO
+
+import pandas as pd
+import requests
+from sqlalchemy import text
 
 from common.base_crawler import DownloadOnceCrawler, load_config
-
-import requests
-import pandas as pd
-from sqlalchemy import text
 
 metadata_info = {
     "schema_name": "synpro_free_load_profiles",
@@ -35,6 +35,7 @@ metadata_info = {
     "concave_hull_geometry": None,
 }
 
+
 class SynproLoadProfileCrawler(DownloadOnceCrawler):
     def __init__(self, schema_name, config):
         super().__init__(schema_name, config)
@@ -42,13 +43,15 @@ class SynproLoadProfileCrawler(DownloadOnceCrawler):
 
     def structure_exists(self):
         try:
-            query = text("SELECT 1 FROM synpro_free_load_profiles.electric_family LIMIT 1")
+            query = text(
+                "SELECT 1 FROM synpro_free_load_profiles.electric_family LIMIT 1"
+            )
             with self.engine.connect() as conn:
                 return conn.execute(query).scalar() == 1
         except Exception:
             return False
-        
-    def crawl_structural(self, recreate = False):
+
+    def crawl_structural(self, recreate=False):
         if not self.structure_exists() or recreate:
             electric = self.crawl_electric()
             domestic_hot_water = self.crawl_dhw()
@@ -60,16 +63,24 @@ class SynproLoadProfileCrawler(DownloadOnceCrawler):
 
     def crawl_electric(self) -> dict[str, pd.DataFrame]:
         constellations = {}
-        constellations["two_fulltime_employees"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Felectric&files=synPRO_el_2_fulltime_employees.dat"}
-        constellations["two_persons_over_65"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Felectric&files=synPRO_el_2_persons_over65.dat"}
-        constellations["family"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Felectric&files=synPRO_el_family.dat"}
-        constellations["single_person_under_30"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Felectric&files=synPRO_el_single_person_under30.dat"}
+        constellations["two_fulltime_employees"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Felectric&files=synPRO_el_2_fulltime_employees.dat"
+        }
+        constellations["two_persons_over_65"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Felectric&files=synPRO_el_2_persons_over65.dat"
+        }
+        constellations["family"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Felectric&files=synPRO_el_family.dat"
+        }
+        constellations["single_person_under_30"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Felectric&files=synPRO_el_single_person_under30.dat"
+        }
 
         logging.info("Crawling electric loads")
         electric_dfs = {}
         for const, const_values in constellations.items():
             r = requests.get(const_values["url"])
-                
+
             with BytesIO(r.content) as file:
                 df = pd.read_csv(file, delimiter=";", header=8)
                 electric_dfs[const] = self.create_datetime_col(df)
@@ -78,16 +89,24 @@ class SynproLoadProfileCrawler(DownloadOnceCrawler):
 
     def crawl_dhw(self) -> dict[str, pd.DataFrame]:
         constellations = {}
-        constellations["old_multi_party_house"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Fdomestic_hot_water&files=synPRO_old_building_multi_party_house.dat"}
-        constellations["old_single_family_house"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Fdomestic_hot_water&files=synPRO_old_building_single_family_house.dat"}
-        constellations["passive_multi_party_house"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Fdomestic_hot_water&files=synPRO_passive_multi_party_house.dat"}
-        constellations["passive_single_family_house"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Fdomestic_hot_water&files=synPRO_passive_single_family_house.dat"}
+        constellations["old_multi_party_house"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Fdomestic_hot_water&files=synPRO_old_building_multi_party_house.dat"
+        }
+        constellations["old_single_family_house"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Fdomestic_hot_water&files=synPRO_old_building_single_family_house.dat"
+        }
+        constellations["passive_multi_party_house"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Fdomestic_hot_water&files=synPRO_passive_multi_party_house.dat"
+        }
+        constellations["passive_single_family_house"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Fdomestic_hot_water&files=synPRO_passive_single_family_house.dat"
+        }
 
         logging.info("Crawling domestic hot water")
         dhw_dfs = {}
         for const, const_values in constellations.items():
             r = requests.get(const_values["url"])
-                
+
             with BytesIO(r.content) as file:
                 df = pd.read_csv(file, delimiter=";", header=16)
                 dhw_dfs[const] = self.create_datetime_col(df)
@@ -96,10 +115,18 @@ class SynproLoadProfileCrawler(DownloadOnceCrawler):
 
     def crawl_heat(self) -> dict[str, pd.DataFrame]:
         constellations = {}
-        constellations["old_multi_party_house"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Froom_heating&files=synPRO_old_building_multi_party_house.dat"}
-        constellations["old_single_family_house"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Froom_heating&files=synPRO_old_building_single_family_house.dat"}
-        constellations["passive_multi_party_house"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Froom_heating&files=synPRO_passive_multi_party_house.dat"}
-        constellations["passive_single_family_house"] = {"url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Froom_heating&files=synPRO_passive_single_family_house.dat"}
+        constellations["old_multi_party_house"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Froom_heating&files=synPRO_old_building_multi_party_house.dat"
+        }
+        constellations["old_single_family_house"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Froom_heating&files=synPRO_old_building_single_family_house.dat"
+        }
+        constellations["passive_multi_party_house"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Froom_heating&files=synPRO_passive_multi_party_house.dat"
+        }
+        constellations["passive_single_family_house"] = {
+            "url": "https://oc.ise.fraunhofer.de/s/vmwmRdTPCo2Na1w/download?path=%2Froom_heating&files=synPRO_passive_single_family_house.dat"
+        }
 
         logging.info("Crawling heat")
         heat_dfs = {}
@@ -117,19 +144,15 @@ class SynproLoadProfileCrawler(DownloadOnceCrawler):
                 heat_dfs[const] = self.create_datetime_col(df)
 
         return heat_dfs
-    
-    def create_datetime_col(self, df: pd.DataFrame) -> pd.DataFrame:
 
+    def create_datetime_col(self, df: pd.DataFrame) -> pd.DataFrame:
         df["datetime"] = pd.to_datetime(df["unixtimestamp"], unit="s", utc=True)
 
-        df.drop(
-            columns=["YYYYMMDD", "hhmmss", "unixtimestamp"],
-            inplace=True)
+        df.drop(columns=["YYYYMMDD", "hhmmss", "unixtimestamp"], inplace=True)
 
         return df
-    
-    def write_to_database(self, dfs: dict[str: pd.DataFrame], name: str) -> None:
 
+    def write_to_database(self, dfs: dict[str : pd.DataFrame], name: str) -> None:
         logging.info(f"Writing {name} data to database")
         for key, df in dfs.items():
             df.to_sql(
