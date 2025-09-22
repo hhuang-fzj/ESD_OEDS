@@ -47,7 +47,6 @@ If you want to use the ECMWF crawler you need to create an account at [copernicu
 
 The used database technology for the database server is [TimescaleDB](https://timescale.com/) which is an extension for PostgreSQL (just like PostGIS but for timeseries databases).
 
-
 ### What is a time-series database?
 Normal SQL tables can get quite slow if millions of entries are stored in them.
 
@@ -68,9 +67,6 @@ This works by using [Distributed Hypertables](https://docs.timescale.com/timesca
 On a high level this can be imagined that for a query spanning a year, each of the three nodes calculates and aggregates the query result for 4 months - resulting in a higher performance.
 This only works for timeseries tables and is not compatible with non-timeseries data.
 Therefore to increase replication of other tables (like the Marktstammdatenregister), one still needs to have manual replication or use something like [Patroni](https://patroni.readthedocs.io/en/latest/).
-
-
-
 
 ## PostGIS
 The database server also includes the [PostGIS](https://postgis.net/) extension which allows for spatial queries and storage of geospatial data.
@@ -93,3 +89,7 @@ Just send a PR and add a new file in the crawler folder with your implemented `C
 You can cite the `open-energy-data-server` through the Conference proceedings:
 
 > Maurer, F., Sejdija, J., & Sander, V. (2024, February 2). Decentralized energy data storages through an Open Energy Database Server. 1st NFDI4Energy Conference (NFDI4Energy), Hanover, Germany. https://doi.org/10.5281/zenodo.10607895
+
+## Using the ECMWF crawler
+
+If you want to use the ECMWF crawler you need to create an account at [copernicus](https://cds.climate.copernicus.eu) to get an API key which allows you to query the API of copernicus. Follow the [instructions](https://cds.climate.copernicus.eu/api-how-to) of copernicus for that.

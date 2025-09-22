@@ -4,6 +4,7 @@
 
 from crawler.chargepoint import ChargepointDownloader
 from crawler.e2watch import E2WatchCrawler
+from crawler.ecmwf import EcmwfCrawler
 from crawler.eon_grid_fees import EonGridFeeCrawler
 from crawler.eview import EViewCrawler
 from crawler.fernwaerme_preisuebersicht import FWCrawler
@@ -42,4 +43,5 @@ crawlers = {
     "smard": SmardCrawler,
     "vea_industrial_load_profiles": IndustrialLoadProfileCrawler,
     "windmodel": WindTurbineCrawler,
+    "weather": EcmwfCrawler,
 }
