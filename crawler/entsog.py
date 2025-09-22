@@ -11,14 +11,15 @@ The resulting data is not available under an open-source license and should not 
 import logging
 import time
 import urllib
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 import requests
 from sqlalchemy import text
 from tqdm import tqdm
 
-from common.base_crawler import BaseCrawler
+from common.base_crawler import ContinuousCrawler, load_config
 
 log = logging.getLogger("entsog")
 log.setLevel(logging.INFO)
@@ -93,10 +94,7 @@ def getDataFrame(name, params=["limit=10000"], useJson=False):
     return data
 
 
-class EntsogCrawler(BaseCrawler):
-    def __init__(self, schema_name):
-        super().__init__(schema_name)
-
+class EntsogCrawler(ContinuousCrawler):
     def pullData(self, names):
         pbar = tqdm(names)
         for name in pbar:
@@ -188,16 +186,6 @@ class EntsogCrawler(BaseCrawler):
                         dat.to_sql(tbl_name, conn, if_exists="replace")
                         log.info(f"replaced table {tbl_name}")
 
-            try:
-                with self.engine.begin() as conn:
-                    query_create_hypertable = text(
-                        f"SELECT public.create_hypertable('{tbl_name}', 'periodfrom', if_not_exists => TRUE, migrate_data => TRUE);"
-                    )
-                    conn.execute(query_create_hypertable)
-                    log.info(f"created hypertable {tbl_name}")
-            except Exception as e:
-                log.error(f"could not create hypertable {tbl_name}: {e}")
-
         # sqlite will only use one index. EXPLAIN QUERY PLAIN shows if index is used
         # ref: https://www.sqlite.org/optoverview.html#or_optimizations
         # reference https://stackoverflow.com/questions/31031561/sqlite-query-to-get-the-closest-datetime
@@ -236,48 +224,44 @@ class EntsogCrawler(BaseCrawler):
                 )
                 conn.execute(query)
 
+    def crawl_temporal(
+        self, begin: datetime | None = None, end: datetime | None = None
+    ):
+        # TODO begin and end is not respected
+        log.error("BEGIN AND END IS CURRENTLY NOT RESPECTED")
+        names = [
+            "cmpUnsuccessfulRequests",
+            "connectionpoints",
+            "operators",
+            "balancingzones",
+            "operatorpointdirections",
+            "Interconnections",
+            "aggregateInterconnections",
+            # 'operationaldata',
+            # 'cmpUnavailables',
+            # 'cmpAuctions',
+            # 'AggregatedData', # operationaldata aggregated for each zone
+            # 'tariffssimulations',
+            # 'tariffsfulls',
+            # 'urgentmarketmessages',
+        ]
 
-def main(schema_name):
-    crawler = EntsogCrawler(schema_name)
+        self.pullData(names)
 
-    names = [
-        "cmpUnsuccessfulRequests",
-        "connectionpoints",
-        "operators",
-        "balancingzones",
-        "operatorpointdirections",
-        "Interconnections",
-        "aggregateInterconnections",
-    ]
-    crawler.pullData(names)
+        indicators = ["Physical Flow", "Allocation", "Firm Technical"]
+        self.pullOperationalData(indicators)
 
-    indicators = ["Physical Flow", "Allocation", "Firm Technical"]
-    crawler.pullOperationalData(indicators)
-    crawler.set_metadata(metadata_info)
+        self.create_hypertable_if_not_exists()
+
+    def create_hypertable_if_not_exists(self) -> None:
+        for table_name in ["Physical Flow", "Allocation", "Firm Technical"]:
+            self.create_single_hypertable_if_not_exists(table_name, "periodfrom")
 
 
 if __name__ == "__main__":
-    logging.basicConfig()
-    # database = 'sqlite:///data/entsog.db'
-    craw = EntsogCrawler("entsog")
+    logging.basicConfig(level="INFO")
+    config = load_config(Path(__file__).parent.parent / "config.yml")
 
-    names = [  # 'cmpUnsuccessfulRequests', # dataset already present
-        # 'operationaldata',
-        # 'cmpUnavailables',
-        # 'cmpAuctions',
-        # 'AggregatedData', # operationaldata aggregated for each zone
-        # 'tariffssimulations',
-        # 'tariffsfulls',
-        # 'urgentmarketmessages',
-        "connectionpoints",
-        "operators",
-        "balancingzones",
-        "operatorpointdirections",
-        "Interconnections",
-        "aggregateInterconnections",
-    ]
-
-    craw.pullData(names)
-
-    indicators = ["Physical Flow", "Allocation", "Firm Technical"]
-    craw.pullOperationalData(indicators)
+    craw = EntsogCrawler("entsog", config)
+    craw.crawl_temporal()
+    craw.set_metadata(metadata_info)

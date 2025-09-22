@@ -12,6 +12,7 @@ import logging
 import os
 import time
 from datetime import timedelta
+from pathlib import Path
 
 import pandas as pd
 from entsoe import EntsoePandasClient
@@ -21,7 +22,7 @@ from requests.exceptions import HTTPError
 from sqlalchemy import text
 from tqdm import tqdm
 
-from common.base_crawler import ContinuousCrawler
+from common.base_crawler import ContinuousCrawler, load_config
 
 log = logging.getLogger("entsoe")
 log.setLevel(logging.INFO)
@@ -120,6 +121,10 @@ class EntsoeCrawler(ContinuousCrawler):
     """
     class to allow easier crawling of ENTSO-E timeseries data
     """
+
+    def __init__(self, schema_name, config):
+        super().__init__(schema_name, config)
+        self.client = EntsoePandasClient(api_key=self.config["entsoe_api_key"])
 
     def init_base_sql(self):
         """
@@ -318,7 +323,7 @@ class EntsoeCrawler(ContinuousCrawler):
         except Exception as e:
             log.error(f"could not create hypertable: {e}")
 
-    def pull_crossborders(self, start, delta, times, proc, allZones=True):
+    def pull_crossborders(self, start, delta, times, allZones=True):
         """
         Pulls transmissions across borders from entsoe
 
@@ -339,6 +344,7 @@ class EntsoeCrawler(ContinuousCrawler):
         -------
 
         """
+        proc = self.client.query_crossborder_flows
         start, delta = self.get_latest_crawled_timestamp(start, delta, proc.__name__)
         log.info(f"****** {proc.__name__} *******")
 
@@ -426,7 +432,7 @@ class EntsoeCrawler(ContinuousCrawler):
             df.to_sql("powersystemdata", conn, if_exists="replace")
         return df
 
-    def download_entsoe_plant_data(self, countries, client, start, delta, times):
+    def download_entsoe_plant_data(self, countries, start, delta, times):
         """
         Allows to download the generation per power plant from entsoe.
         Uses download_entsoe to write the data into the DB.
@@ -435,8 +441,6 @@ class EntsoeCrawler(ContinuousCrawler):
         ----------
         countries : list[str]
             list of 2-letter countrycodes
-        client : entsoe.EntsoePandasClient
-            DataFrameClient of entsoe-py package
         start : pd.Timestamp
             timestamp aware pd.Timestamp
         delta : pd.Timedelta
@@ -467,7 +471,7 @@ class EntsoeCrawler(ContinuousCrawler):
             -------
 
             """
-            ppp = client.query_generation_per_plant(country, start=start, end=end)
+            ppp = self.client.query_generation_per_plant(country, start=start, end=end)
             # convert multiindex into second column
             pp = ppp.melt(
                 var_name=["name", "type"],
@@ -503,7 +507,6 @@ class EntsoeCrawler(ContinuousCrawler):
 
     def countries_with_plant_data(
         self,
-        client,
         countries=all_countries,
         st=pd.Timestamp("20180101", tz="Europe/Berlin"),
     ):
@@ -526,7 +529,7 @@ class EntsoeCrawler(ContinuousCrawler):
         log.info("****** find countries with plant_data *******")
         for country in countries:
             try:
-                _ = client.query_generation_per_plant(
+                _ = self.client.query_generation_per_plant(
                     country, start=st, end=st + timedelta(days=1)
                 )
                 plant_countries.append(country)
@@ -535,7 +538,7 @@ class EntsoeCrawler(ContinuousCrawler):
                 continue
         return plant_countries
 
-    def update_database(self, client, start=None, delta=None, countries=all_countries):
+    def update_database(self, start=None, delta=None, countries=all_countries):
         """
         Runs everything which is needed to update the database and pull the data since the last successful pull.
 
@@ -551,7 +554,8 @@ class EntsoeCrawler(ContinuousCrawler):
         -------
 
         """
-        proc_cap = client.query_installed_generation_capacity
+        # TODO convert to crawl_temporal
+        proc_cap = self.client.query_installed_generation_capacity
         start_, delta_ = self.get_latest_crawled_timestamp(
             start, delta, proc_cap.__name__
         )
@@ -561,12 +565,12 @@ class EntsoeCrawler(ContinuousCrawler):
 
         # timeseries
         ts_procs = [
-            client.query_day_ahead_prices,
-            client.query_load,
-            client.query_load_forecast,
-            client.query_generation_forecast,
-            client.query_wind_and_solar_forecast,
-            client.query_generation,
+            self.client.query_day_ahead_prices,
+            self.client.query_load,
+            self.client.query_load_forecast,
+            self.client.query_generation_forecast,
+            self.client.query_wind_and_solar_forecast,
+            self.client.query_generation,
         ]
 
         # Download load and generation
@@ -577,17 +581,15 @@ class EntsoeCrawler(ContinuousCrawler):
             )
             self.download_entsoe(countries, proc, start_, delta_, times=1)
 
-        self.pull_crossborders(start, delta, 1, client.query_crossborder_flows)
+        self.pull_crossborders(start, delta, 1)
 
-        plant_countries = self.countries_with_plant_data(client)
+        plant_countries = self.countries_with_plant_data()
 
-        self.download_entsoe_plant_data(
-            plant_countries[:], client, start, delta, times=1
-        )
+        self.download_entsoe_plant_data(plant_countries[:], start, delta, times=1)
 
         log.info("****** finished updating ENTSO-E *******")
 
-    def create_database(self, client, start, delta, countries=all_countries):
+    def create_database(self, start, delta, countries=all_countries):
         """
 
         Parameters
@@ -609,23 +611,11 @@ class EntsoeCrawler(ContinuousCrawler):
         self.save_power_system_data()
         self.download_entsoe(
             countries,
-            client.query_installed_generation_capacity_per_unit,
+            self.client.query_installed_generation_capacity_per_unit,
             start,
             delta=delta,
             times=1,
         )
-
-
-def main(schema_name):
-    api_key = os.getenv("ENTSOE_API_KEY", "ae2ed060-c25c-4eea-8ae4-007712f95375")
-    client = EntsoePandasClient(api_key=api_key)
-    crawler = EntsoeCrawler(schema_name)
-
-    start = pd.Timestamp("20150101", tz="Europe/Berlin")
-    delta = pd.Timestamp.now(tz="Europe/Berlin") - start
-    crawler.create_database(client, start, delta)
-    crawler.update_database(client, start, delta)
-    crawler.set_metadata(metadata_info)
 
 
 if __name__ == "__main__":
@@ -637,65 +627,46 @@ if __name__ == "__main__":
     Generate Token as documented here:
     https://iop-transparency.entsoe.eu/content/static_content/download?path=/Static%20content/API-Token-Management.pdf
     """
-    client = EntsoePandasClient(api_key="XXX")
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    env_api_key = os.getenv("ENTSOE_API_KEY")
+    if env_api_key:
+        config["entsoe_api_key"] = env_api_key
+    crawler = EntsoeCrawler("entsoe", config)
 
     start = pd.Timestamp("20150101", tz="Europe/Berlin")
-    delta = timedelta(days=30)
-    end = start + delta
+    delta = pd.Timestamp.now(tz="Europe/Berlin") - start
+    crawler.create_database(start, delta)
+    crawler.update_database(start, delta)
+    crawler.set_metadata(metadata_info)
 
-    times = 7 * 12  # bis 2022
-    # db = 'sqlite:///data/entsoe.db'
-    schema_name = "entsoe"
+    # start = pd.Timestamp("20150101", tz="Europe/Berlin")
+    # delta = timedelta(days=30)
+    # end = start + delta
 
-    crawler = EntsoeCrawler(schema_name)
-    procs = [
-        client.query_day_ahead_prices,
-        client.query_net_position,
-        client.query_load,
-        client.query_load_forecast,
-        client.query_generation_forecast,
-        client.query_wind_and_solar_forecast,
-        client.query_generation,
-    ]
-    times = 1
-    # Download load and generation
-    for proc in procs:
-        # hier könnte man parallelisieren
-        crawler.download_entsoe(all_countries, proc, start, delta, times)
+    # times = 7 * 12  # bis 2022
+    # # db = 'sqlite:///data/entsoe.db'
+    # schema_name = "entsoe"
 
-    # Capacities
-    procs = [
-        client.query_installed_generation_capacity,
-        client.query_installed_generation_capacity_per_unit,
-    ]
+    # procs = [
+    #     crawler.client.query_day_ahead_prices,
+    #     crawler.client.query_net_position,
+    #     crawler.client.query_load,
+    #     crawler.client.query_load_forecast,
+    #     crawler.client.query_generation_forecast,
+    #     crawler.client.query_wind_and_solar_forecast,
+    #     crawler.client.query_generation,
+    # ]
+    # times = 1
+    # # Download load and generation
+    # for proc in procs:
+    #     # hier könnte man parallelisieren
+    #     crawler.download_entsoe(all_countries, proc, start, delta, times)
 
-    # crawler.pull_crossborders(start,delta,1,client.query_crossborder_flows)
+    # # Capacities
+    # procs = [
+    #     crawler.client.query_installed_generation_capacity,
+    #     crawler.client.query_installed_generation_capacity_per_unit,
+    # ]
 
-    # per plant generation
-    plant_countries = crawler.countries_with_plant_data(client, all_countries)
-
-    # db = 'sqlite:///data/entsoe.db'
-    crawler = EntsoeCrawler(schema_name)
-
-    # 2017-12-16 bis 2018-03-15 runterladen
-    crawler.download_entsoe_plant_data(plant_countries[:], client, start, delta, times)
-
-    # create indices if not existing
-
-
-# class EntsoeCrawler(DownloadOnceCrawler, ContinuousCrawler):
-
-#     def crawl_structural(self, recreate=False):
-#         pass
-#         # download areas
-
-#     def crawl_from_to(self, begin: datetime, end: datetime):
-#         pass
-#         # download temporal
-
-
-# crawler = EntsoeCrawler("entsoe")
-# if isinstance(crawler, DownloadOnceCrawler):
-#     crawler.crawl_structural()
-# if isinstance(crawler, ContinuousCrawler):
-#     crawler.crawl_temporal()
+    # # per plant generation
+    # plant_countries = crawler.countries_with_plant_data(all_countries)

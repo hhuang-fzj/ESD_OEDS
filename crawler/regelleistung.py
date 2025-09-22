@@ -7,162 +7,49 @@ https://regelleistung.net/
 """
 
 import functools as ft
-import json
 import logging
-import os.path
 import sys
 import warnings
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import sqlalchemy
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
-from .config import db_uri
+from common.base_crawler import ContinuousCrawler, load_config
 
 log = logging.getLogger("regelleistung")
 log.setLevel(logging.INFO)
 
-EARLIEST_DATE_TO_WRITE = datetime.strptime("2019-01-01", "%Y-%m-%d").date()
-
-DATES_IN_DB = {}
-FILE_PATH_DATE_IN_DB = "regelleistung_dates_written_in_db.json"
-
 # Regelleistungsmarkt
-TABLE_NAME_FCR_DEMANDS = "fcr_bedarfe"
-URL_FCR_DEMANDS = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=FCR"
-TABLE_NAME_FCR_RESULTS = "fcr_ergebnisse"
-URL_FCR_RESULTS = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=FCR"
-TABLE_NAME_FCR_ANONYM_RESULTS = "fcr_anonyme_ergebnisse"
-URL_FCR_ANONYM_RESULTS = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=FCR"
-
-TABLE_NAME_AFRR_DEMANDS_CAPACITY = "afrr_bedarfe_regelleistung"
-URL_AFRR_DEMANDS_CAPACITY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=aFRR"
-TABLE_NAME_AFRR_RESULTS_CAPACITY = "afrr_ergebnisse_regelleistung"
-URL_AFRR_RESULTS_CAPACITY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=aFRR"
-TABLE_NAME_AFRR_ANONYM_RESULTS_CAPACITY = "afrr_anonyme_ergebnisse_regelleistung"
-URL_AFRR_ANONYM_RESULTS_CAPACITY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=aFRR"
-
-TABLE_NAME_MFRR_DEMANDS_CAPACITY = "mfrr_bedarfe_regelleistung"
-URL_MFRR_DEMANDS_CAPACITY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=mFRR"
-TABLE_NAME_MFRR_RESULTS_CAPACITY = "mfrr_ergebnisse_regelleistung"
-URL_MFRR_RESULTS_CAPACITY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=mFRR"
-TABLE_NAME_MFRR_ANONYM_RESULTS_CAPACITY = "mfrr_anonyme_ergebnisse_regelleistung"
-URL_MFRR_ANONYM_RESULTS_CAPACITY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=mFRR"
-
-# Regelarbeitsmarkt
-TABLE_NAME_AFRR_DEMANDS_ENERGY = "afrr_bedarfe_regelarbeit"
-URL_AFRR_DEMANDS_ENERGY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=aFRR"
-TABLE_NAME_AFRR_RESULTS_ENERGY = "afrr_ergebnisse_regelarbeit"
-URL_AFRR_RESULTS_ENERGY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=aFRR"
-TABLE_NAME_AFRR_ANONYM_RESULTS_ENERGY = "afrr_anonyme_ergebnisse_regelarbeit"
-URL_AFRR_ANONYM_RESULTS_ENERGY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=aFRR"
-
-TABLE_NAME_MFRR_DEMANDS_ENERGY = "mfrr_bedarfe_regelarbeit"
-URL_MFRR_DEMANDS_ENERGY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=mFRR"
-TABLE_NAME_MFRR_RESULTS_ENERGY = "mfrr_ergebnisse_regelarbeit"
-URL_MFRR_RESULTS_ENERGY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=mFRR"
-TABLE_NAME_MFRR_ANONYM_RESULTS_ENERGY = "mfrr_anonyme_ergebnisse_regelarbeit"
-URL_MFRR_ANONYM_RESULTS_ENERGY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=mFRR"
-
-# Abschaltbare Lasten
-TABLE_NAME_ABLA_DEMANDS_ENERGY = "abla_bedarfe"
-URL_ABLA_DEMANDS_ENERGY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=ABLA"
-TABLE_NAME_ABLA_RESULTS_ENERGY = "abla_ergebnisse"
-URL_ABLA_RESULTS_ENERGY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=ABLA"
-TABLE_NAME_ABLA_ANONYM_RESULTS_ENERGY = "abla_anonyme_ergebnisse"
-URL_ABLA_ANONYM_RESULTS_ENERGY = "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=ABLA"
-
-
-def add_latest_date_to_dict(date, table_name):
-    if date is not None:
-        if f"latest_date_in_db_{table_name}" in DATES_IN_DB.keys():
-            latest_date_str = DATES_IN_DB[f"latest_date_in_db_{table_name}"]
-            latest_date = datetime.strptime(latest_date_str, "%Y-%m-%d").date()
-            if latest_date < date:
-                DATES_IN_DB[f"latest_date_in_db_{table_name}"] = date.strftime(
-                    "%Y-%m-%d"
-                )
-        else:
-            DATES_IN_DB[f"latest_date_in_db_{table_name}"] = date.strftime("%Y-%m-%d")
-
-
-def add_earliest_date_to_dict(date, table_name):
-    if date is not None:
-        if f"earliest_date_in_db_{table_name}" in DATES_IN_DB.keys():
-            earliest_date_str = DATES_IN_DB[f"earliest_date_in_db_{table_name}"]
-            earliest_date = datetime.strptime(earliest_date_str, "%Y-%m-%d").date()
-            if earliest_date > date:
-                DATES_IN_DB[f"earliest_date_in_db_{table_name}"] = date.strftime(
-                    "%Y-%m-%d"
-                )
-        else:
-            DATES_IN_DB[f"earliest_date_in_db_{table_name}"] = date.strftime("%Y-%m-%d")
-
-
-def get_date_column_from_table_name(table_name):
-    if "regelarbeit" in table_name:
-        return "delivery_date"
-    else:
-        return "date_from"
-
-
-def get_date_from_sql(engine, table_name, sql):
-    try:
-        with engine.begin() as conn:
-            date_col = get_date_column_from_table_name(table_name)
-            df = pd.read_sql(sql, conn, parse_dates=[date_col])
-            date = (df[date_col][0]).date()
-            return date
-    except sqlalchemy.exc.ProgrammingError as e:
-        _, err_obj, _ = sys.exc_info()
-        if "psycopg2.errors.UndefinedTable" in str(err_obj):
-            log.info(f"There does not exist a table {table_name} yet.")
-            return None
-        elif (
-            f'(psycopg2.errors.UndefinedColumn) column "{date_col}" does not exist'
-            in str(err_obj)
-        ):
-            log.info(
-                f'The date column "{date_col}" does not exist in the table "{table_name}".'
-            )
-        else:
-            log.error(e)
-    except Exception as e:
-        log.error(e)
-
-
-def get_latest_date(engine, table_name):
-    latest_date = get_latest_date_if_table_exists(engine, table_name)
-    if latest_date is None and f"latest_date_in_db_{table_name}" in DATES_IN_DB.keys():
-        latest_date_str = DATES_IN_DB[f"latest_date_in_db_{table_name}"]
-        latest_date = datetime.strptime(latest_date_str, "%Y-%m-%d").date()
-
-    return latest_date
-
-
-def get_earliest_date(engine, table_name):
-    earliest_date = get_earliest_date_if_table_exists(engine, table_name)
-    if (
-        earliest_date is None
-        and f"earliest_date_in_db_{table_name}" in DATES_IN_DB.keys()
-    ):
-        earliest_date_str = DATES_IN_DB[f"earliest_date_in_db_{table_name}"]
-        earliest_date = datetime.strptime(earliest_date_str, "%Y-%m-%d").date()
-    return earliest_date
-
-
-def get_latest_date_if_table_exists(engine, table_name):
-    date_col = get_date_column_from_table_name(table_name)
-    sql = f"SELECT max({date_col}) AS {date_col} FROM {table_name}"
-    return get_date_from_sql(engine, table_name, sql)
-
-
-def get_earliest_date_if_table_exists(engine, table_name):
-    date_col = get_date_column_from_table_name(table_name)
-    sql = f"SELECT min({date_col}) AS {date_col} FROM {table_name}"
-    return get_date_from_sql(engine, table_name, sql)
+TABLE_DATA = {
+    # FCR
+    "fcr_bedarfe": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=FCR",
+    "fcr_ergebnisse": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=FCR",
+    "fcr_anonyme_ergebnisse": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=FCR",
+    # aFRR Capacity
+    "afrr_bedarfe_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=aFRR",
+    "afrr_ergebnisse_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=aFRR",
+    "afrr_anonyme_ergebnisse_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=aFRR",
+    # mFRR Capacity
+    "mfrr_bedarfe_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=mFRR",
+    "mfrr_ergebnisse_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=mFRR",
+    "mfrr_anonyme_ergebnisse_regelleistung": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=mFRR",
+    # aFRR Energy
+    "afrr_bedarfe_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=aFRR",
+    "afrr_ergebnisse_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=aFRR",
+    "afrr_anonyme_ergebnisse_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=aFRR",
+    # mFRR Energy
+    "mfrr_bedarfe_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=mFRR",
+    "mfrr_ergebnisse_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=mFRR",
+    "mfrr_anonyme_ergebnisse_regelarbeit": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=ENERGY&productTypes=mFRR",
+    # ABLA
+    "abla_bedarfe": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/demands?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=ABLA",
+    "abla_ergebnisse": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/resultsoverview?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=ABLA",
+    "abla_anonyme_ergebnisse": "https://www.regelleistung.net/apps/cpp-publisher/api/v1/download/tenders/anonymousresults?date={date_str}&exportFormat=xlsx&market=CAPACITY&productTypes=ABLA",
+}
 
 
 def database_friendly(string):
@@ -524,7 +411,14 @@ def prepare_afrr_mfrr_results_df(df):
     return df_final.reset_index()
 
 
-def get_df_for_date(url, date_to_get, table_name):
+def get_date_column_from_table_name(table_name):
+    if "regelarbeit" in table_name:
+        return "delivery_date"
+    else:
+        return "date_from"
+
+
+def get_df_for_date(url, date_to_get: date, table_name: str):
     date_str = date_to_get.strftime("%Y-%m-%d")
     url_with_date = url.format(date_str=date_str)
     warnings.filterwarnings(
@@ -532,7 +426,12 @@ def get_df_for_date(url, date_to_get, table_name):
         category=UserWarning,
         message="Workbook contains no default style, apply openpyxl's default",
     )
-    df = pd.read_excel(url_with_date, sheet_name="001", na_values=["-", "n.a.", "n.e."])
+    try:
+        df = pd.read_excel(
+            url_with_date, sheet_name="001", na_values=["-", "n.a.", "n.e."]
+        )
+    except Exception as e:
+        raise Exception(f"Could not read Datasheet from URL: {url_with_date}") from e
     df.rename(mapper=lambda x: database_friendly(x), axis="columns", inplace=True)
 
     # adapt date_from and date_to column if from regelleistungsmarkt
@@ -574,32 +473,11 @@ def get_df_for_date(url, date_to_get, table_name):
             if col_to_drop in df.columns:
                 df = df.drop(col_to_drop, axis=1)
 
-    if (
-        table_name
-        in [
-            TABLE_NAME_FCR_DEMANDS,
-            TABLE_NAME_AFRR_DEMANDS_CAPACITY,
-            TABLE_NAME_MFRR_DEMANDS_CAPACITY,
-            TABLE_NAME_AFRR_DEMANDS_ENERGY,
-            TABLE_NAME_MFRR_DEMANDS_ENERGY,
-            TABLE_NAME_ABLA_DEMANDS_ENERGY,
-        ]
-        and df.shape[0] > 0
-    ):
+    if "bedarfe" in table_name and df.shape[0] > 0:
         df = prepare_demands_df(df)
-    elif table_name == TABLE_NAME_FCR_RESULTS and df.shape[0] > 0:
+    elif table_name == "fcr_ergebnisse" and df.shape[0] > 0:
         df = prepare_fcr_results_df(df)
-    elif (
-        table_name
-        in [
-            TABLE_NAME_AFRR_RESULTS_CAPACITY,
-            TABLE_NAME_MFRR_RESULTS_CAPACITY,
-            TABLE_NAME_AFRR_RESULTS_ENERGY,
-            TABLE_NAME_MFRR_RESULTS_ENERGY,
-            TABLE_NAME_ABLA_RESULTS_ENERGY,
-        ]
-        and df.shape[0] > 0
-    ):
+    elif "ergebnis" in table_name and df.shape[0] > 0:
         df = prepare_afrr_mfrr_results_df(df)
 
     df = df.dropna(axis="columns", how="all")
@@ -628,229 +506,179 @@ def get_df_for_date(url, date_to_get, table_name):
     return df
 
 
-def write_concat_table(engine, table_name, new_data):
-    with engine.begin() as conn:
-        # merge old data with new data
-        prev = pd.read_sql_query(f"select * from {table_name}", conn)
-        new_cols = set(new_data.columns).difference(set(prev.columns))
-        removed_cols = set(prev.columns).difference(set(new_data.columns))
-        log.info(f"New columns: {new_cols}")
-        log.info(f"Removed columns: {removed_cols}")
+TEMPORAL_START = date(2020, 2, 1)
+
+
+class RegelleistungCrawler(ContinuousCrawler):
+    TIMEDELTA = timedelta(days=2)
+
+    def get_latest_data(self, table_name: str) -> date:
         date_col = get_date_column_from_table_name(table_name)
-        log.info(new_data[date_col])
-        complete_data = pd.concat([prev, new_data])
-        complete_data.to_sql(table_name, conn, if_exists="replace", index=False)
-
-
-def write_past_entries(
-    engine,
-    table_name,
-    url,
-    earliest_date,
-    earliest_date_to_write=EARLIEST_DATE_TO_WRITE,
-):
-    data_for_date_exists = True
-    wrote_data = False
-    start_date = earliest_date - timedelta(days=1)
-
-    while data_for_date_exists and (earliest_date_to_write < earliest_date):
+        query = text(f'SELECT max("{date_col}") as "{date_col}" FROM "{table_name}"')
         try:
-            earliest_date -= timedelta(days=1)
-            df = get_df_for_date(url, earliest_date, table_name)
-            with engine.begin() as conn:
-                df.to_sql(table_name, conn, if_exists="append", index=False)
-            wrote_data = True
-        except sqlalchemy.exc.ProgrammingError as e:
-            _, err_obj, _ = sys.exc_info()
-            if "psycopg2.errors.UndefinedColumn" in str(err_obj):
-                log.info(f"handling {repr(e)} by concat")
-                write_concat_table(engine, table_name, df)
-                log.info(f"replaced table {table_name}")
-                wrote_data = True
-            else:
-                log.error(f"Encountered error {e}")
-                data_for_date_exists = False
-        except Exception as e:
-            log.info(
-                f"The earliest date for {table_name} is the date {earliest_date}. {e}"
-            )
-            add_earliest_date_to_dict(earliest_date, table_name)
-            data_for_date_exists = False
+            with self.engine.connect() as conn:
+                latest_datetime = conn.execute(query).scalar()
+                if not latest_datetime:
+                    return TEMPORAL_START
+                return date(
+                    latest_datetime.year, latest_datetime.month, latest_datetime.day
+                )
+        except Exception:
+            log.error("No data found for %s", table_name)
+            return TEMPORAL_START
 
-    if wrote_data:
-        log.info(
-            f"Finished writing {table_name} to Database with earliest date {earliest_date}"
-        )
-        add_latest_date_to_dict(start_date, table_name)
-        add_earliest_date_to_dict(earliest_date, table_name)
-    elif not wrote_data and data_for_date_exists:
-        log.info(
-            f"The defined date for the earliest entry was already reached in {table_name}. If you want to have more data, simply adjust the earliest date to write parameter."
-        )
-        add_earliest_date_to_dict(earliest_date, table_name)
-    else:
-        log.info(f"No past data was written for {table_name}")
+    def get_first_data(self, table_name: str) -> date:
+        date_col = get_date_column_from_table_name(table_name)
+        query = text(f'SELECT min("{date_col}") as "{date_col}" FROM "{table_name}"')
+        try:
+            with self.engine.connect() as conn:
+                earliest_datetime = conn.execute(query).scalar()
+                if not earliest_datetime:
+                    return TEMPORAL_START
+                return date(
+                    earliest_datetime.year,
+                    earliest_datetime.month,
+                    earliest_datetime.day,
+                )
+        except Exception:
+            log.error("No data found for %s", table_name)
+            return TEMPORAL_START
 
+    def write_concat_table(self, table_name, new_data):
+        with self.engine.begin() as conn:
+            # merge old data with new data
+            prev = pd.read_sql_query(f"select * from {table_name}", conn)
+            new_cols = set(new_data.columns).difference(set(prev.columns))
+            removed_cols = set(prev.columns).difference(set(new_data.columns))
+            log.info(f"New columns: {new_cols}")
+            log.info(f"Removed columns: {removed_cols}")
+            date_col = get_date_column_from_table_name(table_name)
+            log.info(new_data[date_col])
+            complete_data = pd.concat([prev, new_data])
+            complete_data.to_sql(table_name, conn, if_exists="replace", index=False)
 
-def create_table_and_write_past_data(
-    engine, url, table_name, earliest_date_to_write=EARLIEST_DATE_TO_WRITE
-):
-    log.info(f"Start creating table {table_name} and adding new data")
-    earliest_date = date.today()
-    write_past_entries(engine, table_name, url, earliest_date, earliest_date_to_write)
+    def write_past_entries(
+        self,
+        table_name,
+        url,
+        earliest_date,
+        earliest_date_to_write=TEMPORAL_START,
+    ):
+        data_for_date_exists = True
+        wrote_data = False
 
-
-def add_additional_past_entries(
-    engine, table_name, url, earliest_date_to_write=EARLIEST_DATE_TO_WRITE
-):
-    log.info(f"Start writing missing past entries in table {table_name} if any")
-    earliest_date = get_earliest_date(engine, table_name)
-    write_past_entries(engine, table_name, url, earliest_date, earliest_date_to_write)
-
-
-def write_new_data_from_latest_date_to_today(engine, url, table_name, latest_data_date):
-    log.info(f"Start writing new data to {table_name}")
-
-    today_date = datetime.today().date()
-
-    if latest_data_date == (today_date - timedelta(days=1)):
-        log.info(f"Table {table_name} has already the newest data.")
-    else:
-        latest_data_date = latest_data_date + timedelta(days=1)
-        encountered_problem = False
-        while latest_data_date < today_date and not encountered_problem:
+        while data_for_date_exists and (earliest_date_to_write < earliest_date):
             try:
-                df = get_df_for_date(url, latest_data_date, table_name)
-                with engine.begin() as conn:
+                earliest_date -= timedelta(days=1)
+                df = get_df_for_date(url, earliest_date, table_name)
+                with self.engine.begin() as conn:
                     df.to_sql(table_name, conn, if_exists="append", index=False)
-                latest_data_date += timedelta(days=1)
+                wrote_data = True
             except sqlalchemy.exc.ProgrammingError as e:
                 _, err_obj, _ = sys.exc_info()
                 if "psycopg2.errors.UndefinedColumn" in str(err_obj):
                     log.info(f"handling {repr(e)} by concat")
-                    write_concat_table(engine, table_name, df)
+                    self.write_concat_table(table_name, df)
                     log.info(f"replaced table {table_name}")
+                    wrote_data = True
                 else:
                     log.error(f"Encountered error {e}")
-                    encountered_problem = True
-            except Exception:
-                encountered_problem = True
+                    data_for_date_exists = False
+            except Exception as e:
+                log.info(
+                    f"The earliest date for {table_name} is the date {earliest_date}. {e}"
+                )
+                data_for_date_exists = False
 
-        if not encountered_problem:
-            add_latest_date_to_dict(latest_data_date - timedelta(days=1), table_name)
+        if wrote_data:
+            log.info(
+                f"Finished writing {table_name} to Database with earliest date {earliest_date}"
+            )
+        elif not wrote_data and data_for_date_exists:
+            log.info(
+                f"The defined date for the earliest entry was already reached in {table_name}. If you want to have more data, simply adjust the earliest date to write parameter."
+            )
+        else:
+            log.info(f"No past data was written for {table_name}")
 
-        log.info(
-            f"Finished writing new data to {table_name} with newest date being yesterday {(latest_data_date - timedelta(days=1))}"
-        )
+    def create_table_and_write_past_data(
+        self, url, table_name, earliest_date_to_write=TEMPORAL_START
+    ):
+        log.info(f"Start creating table {table_name} and adding new data")
+        earliest_date = date.today()
+        self.write_past_entries(table_name, url, earliest_date, earliest_date_to_write)
 
+    def add_additional_past_entries(
+        self, table_name, url, earliest_date_to_write=TEMPORAL_START
+    ):
+        log.info(f"Start writing missing past entries in table {table_name} if any")
+        earliest_date = self.get_first_data(table_name)
+        self.write_past_entries(table_name, url, earliest_date, earliest_date_to_write)
 
-def create_hypertable(engine, table_name):
-    try:
-        date_col = get_date_column_from_table_name(table_name)
-        query_create_hypertable = f"SELECT public.create_hypertable('{table_name}', '{date_col}', if_not_exists => TRUE, migrate_data => TRUE);"
-        with engine.begin() as conn:
-            conn.execute(text(query_create_hypertable))
-        log.info(f"created hypertable {table_name}")
-    except Exception as e:
-        log.error(f"could not create hypertable: {e}")
+    def write_new_data_from_latest_date_to_today(
+        self, url, table_name, latest_data_date
+    ):
+        log.info(f"Start writing new data to {table_name}")
 
+        today_date = date.today()
 
-def write_data_in_table(
-    engine,
-    table_name,
-    url,
-    earliest_date_to_write=EARLIEST_DATE_TO_WRITE,
-    write_additional_past_entries_if_any=True,
-):
-    if os.path.isfile(FILE_PATH_DATE_IN_DB):
-        f = open(FILE_PATH_DATE_IN_DB)
-        global DATES_IN_DB
-        DATES_IN_DB = json.load(f)
+        if latest_data_date == (today_date - timedelta(days=1)):
+            log.info(f"Table {table_name} has already the newest data.")
+        else:
+            latest_data_date = latest_data_date + timedelta(days=1)
+            while latest_data_date < today_date:
+                try:
+                    df = get_df_for_date(url, latest_data_date, table_name)
+                    with self.engine.begin() as conn:
+                        df.to_sql(table_name, conn, if_exists="append", index=False)
+                    latest_data_date += timedelta(days=1)
+                except sqlalchemy.exc.ProgrammingError as e:
+                    _, err_obj, _ = sys.exc_info()
+                    if "psycopg2.errors.UndefinedColumn" in str(err_obj):
+                        log.info(f"handling {repr(e)} by concat")
+                        self.write_concat_table(table_name, df)
+                        log.info(f"replaced table {table_name}")
+                    else:
+                        log.error(f"Encountered error {e}")
 
-    latest_date = get_latest_date(engine, table_name)
-    add_latest_date_to_dict(latest_date, table_name)
-    if latest_date is not None:
-        write_new_data_from_latest_date_to_today(engine, url, table_name, latest_date)
-        if write_additional_past_entries_if_any:
-            add_additional_past_entries(engine, table_name, url, earliest_date_to_write)
-    else:
-        create_table_and_write_past_data(
-            engine, url, table_name, earliest_date_to_write
-        )
-    create_hypertable(engine, table_name)
+            log.info(
+                f"Finished writing new data to {table_name} with newest date being yesterday {(latest_data_date - timedelta(days=1))}"
+            )
 
-    with open(FILE_PATH_DATE_IN_DB, "w") as outfile:
-        json.dump(DATES_IN_DB, outfile)
+    def write_data_in_table(
+        self,
+        table_name,
+        url,
+        earliest_date_to_write=TEMPORAL_START,
+        write_additional_past_entries_if_any=True,
+    ):
+        latest_date = self.get_latest_data(table_name)
+        if latest_date is not None:
+            self.write_new_data_from_latest_date_to_today(url, table_name, latest_date)
+            if write_additional_past_entries_if_any:
+                self.add_additional_past_entries(
+                    table_name, url, earliest_date_to_write
+                )
+        else:
+            self.create_table_and_write_past_data(
+                url, table_name, earliest_date_to_write
+            )
 
+    def crawl_temporal(self, begin: date | None = None, end: date | None = None):
+        # TODO refactoring, begin and end is not respected
+        for table_name, url in TABLE_DATA.items():
+            self.write_data_in_table(table_name, url)
 
-def write_all_tables(engine):
-    # Regelleistungsmarkt
-    write_data_in_table(engine, TABLE_NAME_FCR_DEMANDS, URL_FCR_DEMANDS)
-    write_data_in_table(engine, TABLE_NAME_FCR_RESULTS, URL_FCR_RESULTS)
-    write_data_in_table(engine, TABLE_NAME_FCR_ANONYM_RESULTS, URL_FCR_ANONYM_RESULTS)
+        self.create_hypertable_if_not_exists()
 
-    write_data_in_table(
-        engine, TABLE_NAME_AFRR_DEMANDS_CAPACITY, URL_AFRR_DEMANDS_CAPACITY
-    )
-    write_data_in_table(
-        engine, TABLE_NAME_AFRR_RESULTS_CAPACITY, URL_AFRR_RESULTS_CAPACITY
-    )
-    write_data_in_table(
-        engine,
-        TABLE_NAME_AFRR_ANONYM_RESULTS_CAPACITY,
-        URL_AFRR_ANONYM_RESULTS_CAPACITY,
-    )
-
-    write_data_in_table(
-        engine, TABLE_NAME_MFRR_DEMANDS_CAPACITY, URL_MFRR_DEMANDS_CAPACITY
-    )
-    write_data_in_table(
-        engine, TABLE_NAME_MFRR_RESULTS_CAPACITY, URL_MFRR_RESULTS_CAPACITY
-    )
-    write_data_in_table(
-        engine,
-        TABLE_NAME_MFRR_ANONYM_RESULTS_CAPACITY,
-        URL_MFRR_ANONYM_RESULTS_CAPACITY,
-    )
-
-    # Regelarbeitsmarkt
-    write_data_in_table(engine, TABLE_NAME_AFRR_DEMANDS_ENERGY, URL_AFRR_DEMANDS_ENERGY)
-    write_data_in_table(engine, TABLE_NAME_AFRR_RESULTS_ENERGY, URL_AFRR_RESULTS_ENERGY)
-    write_data_in_table(
-        engine,
-        TABLE_NAME_AFRR_ANONYM_RESULTS_ENERGY,
-        URL_AFRR_ANONYM_RESULTS_ENERGY,
-    )
-
-    write_data_in_table(engine, TABLE_NAME_MFRR_DEMANDS_ENERGY, URL_MFRR_DEMANDS_ENERGY)
-    write_data_in_table(engine, TABLE_NAME_MFRR_RESULTS_ENERGY, URL_MFRR_RESULTS_ENERGY)
-    write_data_in_table(
-        engine,
-        TABLE_NAME_MFRR_ANONYM_RESULTS_ENERGY,
-        URL_MFRR_ANONYM_RESULTS_ENERGY,
-    )
-
-    # Abschaltbare Lasten
-    write_data_in_table(engine, TABLE_NAME_ABLA_DEMANDS_ENERGY, URL_ABLA_DEMANDS_ENERGY)
-    write_data_in_table(engine, TABLE_NAME_ABLA_RESULTS_ENERGY, URL_ABLA_RESULTS_ENERGY)
-    write_data_in_table(
-        engine,
-        TABLE_NAME_ABLA_ANONYM_RESULTS_ENERGY,
-        URL_ABLA_ANONYM_RESULTS_ENERGY,
-    )
-
-
-def main(db_uri):
-    if os.path.isfile(FILE_PATH_DATE_IN_DB):
-        f = open(FILE_PATH_DATE_IN_DB)
-        global DATES_IN_DB
-        DATES_IN_DB = json.load(f)
-    engine = create_engine(db_uri)
-    write_all_tables(engine)
-    with open(FILE_PATH_DATE_IN_DB, "w") as outfile:
-        json.dump(DATES_IN_DB, outfile)
+    def create_hypertable_if_not_exists(self) -> None:
+        for table_name in TABLE_DATA.keys():
+            date_col = get_date_column_from_table_name(table_name)
+            self.create_single_hypertable_if_not_exists(table_name, date_col)
 
 
 if __name__ == "__main__":
     logging.basicConfig()
-    main(db_uri("regelleistung"))
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    crawler = RegelleistungCrawler("regelleistung", config)
+    crawler.crawl_temporal()

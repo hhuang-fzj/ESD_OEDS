@@ -3,11 +3,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import csv
-import glob
 import logging
-import os
+import shutil
+import zipfile
 from datetime import date, datetime, timedelta
 from io import StringIO
+from pathlib import Path
 
 import cdsapi
 import geopandas as gpd
@@ -15,9 +16,9 @@ import pandas as pd
 import swifter  # noqa: F401
 import xarray as xr
 from shapely.geometry import Point
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
-from common.config import db_uri
+from common.base_crawler import ContinuousCrawler, CrawlerConfig, load_config
 
 """
     Note that only requests with no more that 1000 items at a time are valid.
@@ -32,16 +33,15 @@ log = logging.getLogger("ecmwf")
 # path of nuts file
 # downloaded from
 # https://ec.europa.eu/eurostat/de/web/gisco/geodata/reference-data/administrative-units-statistical-units/nuts#nuts21
-nuts_path = os.path.realpath(
-    os.path.join(os.path.dirname(__file__), "shapes", "NUTS_RG_01M_2021_4326.shp")
-)
+NUTS_PATH = Path(__file__).parent / "shapes/NUTS_RG_01M_2021_4326.shp"
+TEMP_DIR = Path(__file__).parent.parent / "ecmwf_grb_files"
 
 # coords for europe according to:
 # https://cds.climate.copernicus.eu/toolbox/doc/how-to/1_how_to_retrieve_data/1_how_to_retrieve_data.html#retrieve-a-geographical-subset-and-change-the-default-resolution
 coords = [75, -15, 30, 42.5]
 
 # requested weather variable
-var_ = [
+weather_variables = [
     "10m_u_component_of_wind",
     "10m_v_component_of_wind",
     "2m_temperature",
@@ -49,60 +49,46 @@ var_ = [
     "surface_net_solar_radiation",
 ]
 
+TEMPORAL_START = datetime(2022, 1, 1)
+
 
 def create_table(engine):
-    try:
-        query_create_hypertable = "SELECT public.create_hypertable('ecmwf', 'time', if_not_exists => TRUE, migrate_data => TRUE);"
-        query_create_hypertable_eu = "SELECT public.create_hypertable('ecmwf_eu', 'time', if_not_exists => TRUE, migrate_data => TRUE);"
-        with engine.begin() as conn:
-            conn.exec_driver_sql(
-                "CREATE TABLE IF NOT EXISTS ecmwf( "
-                "time timestamp without time zone NOT NULL, "
-                "temp_air double precision, "
-                "ghi double precision, "
-                "wind_meridional double precision, "
-                "wind_zonal double precision, "
-                "wind_speed double precision, "
-                "precipitation double precision, "
-                "latitude double precision, "
-                "longitude double precision, "
-                "PRIMARY KEY (time , latitude, longitude));"
-            )
-            conn.exec_driver_sql(query_create_hypertable)
-        log.info("created hypertable ecmwf")
-    except Exception as e:
-        log.error(f"could not create hypertable: {e}")
-
-    try:
-        with engine.begin() as conn:
-            conn.exec_driver_sql(
-                "CREATE TABLE IF NOT EXISTS ecmwf_eu( "
-                "time timestamp without time zone NOT NULL, "
-                "temp_air double precision, "
-                "ghi double precision, "
-                "wind_meridional double precision, "
-                "wind_zonal double precision, "
-                "wind_speed double precision, "
-                "precipitation double precision, "
-                "latitude double precision, "
-                "longitude double precision, "
-                "nuts_id text, "
-                "PRIMARY KEY (time , latitude, longitude, nuts_id));"
-            )
-            conn.exec_driver_sql(query_create_hypertable_eu)
-        log.info("created hypertable ecmwf_eu")
-    except Exception as e:
-        log.error(f"could not create hypertable: {e}")
-
-
-def save_data(request, ecmwf_client: cdsapi.Client):
-    # path for downloaded files from copernicus
-    save_downloaded_files_path = os.path.realpath(
-        os.path.join(
-            os.path.dirname(__file__),
-            f"{request.get('year')}_{request.get('month')}_{request.get('day')[0]}-{request.get('month')}_{request.get('day')[len(request.get('day')) - 1]}_ecmwf.grb",
+    with engine.begin() as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ecmwf( "
+            "time timestamp without time zone NOT NULL, "
+            "temp_air double precision, "
+            "ghi double precision, "
+            "wind_meridional double precision, "
+            "wind_zonal double precision, "
+            "wind_speed double precision, "
+            "precipitation double precision, "
+            "latitude double precision, "
+            "longitude double precision, "
+            "PRIMARY KEY (time , latitude, longitude));"
         )
-    )
+
+    with engine.begin() as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ecmwf_eu( "
+            "time timestamp without time zone NOT NULL, "
+            "temp_air double precision, "
+            "ghi double precision, "
+            "wind_meridional double precision, "
+            "wind_zonal double precision, "
+            "wind_speed double precision, "
+            "precipitation double precision, "
+            "latitude double precision, "
+            "longitude double precision, "
+            "nuts_id text, "
+            "PRIMARY KEY (time , latitude, longitude, nuts_id));"
+        )
+
+
+def save_ecmwf_request_to_file(request, ecmwf_client: cdsapi.Client):
+    # path for downloaded files from copernicus
+    filename = f"{request['year']}_{request['month']}_{request['day'][0]}-{request['month']}_{request['day'][-1]}_ecmwf.zip"
+    save_downloaded_files_path = TEMP_DIR / filename
     ecmwf_client.retrieve("reanalysis-era5-land", request, save_downloaded_files_path)
 
 
@@ -125,13 +111,18 @@ def psql_insert_copy(table, conn, keys: list[str], data_iter):
 
 
 def build_dataframe(engine, request: dict, write_lat_lon: bool = True):
-    file_path = os.path.realpath(
-        os.path.join(
-            os.path.dirname(__file__),
-            f"{request.get('year')}_{request.get('month')}_{request.get('day')[0]}-{request.get('month')}_{request.get('day')[len(request.get('day')) - 1]}_ecmwf.grb",
-        )
-    )
-    weather_data = xr.open_dataset(file_path, engine="cfgrib")
+    filename = f"{request['year']}_{request['month']}_{request['day'][0]}-{request['month']}_{request['day'][-1]}_ecmwf.zip"
+    file_path = TEMP_DIR / filename
+    filename = "2022_01_0-01_1_ecmwf.grb"
+
+    if zipfile.is_zipfile(file_path):
+        # log.info("extracting zipfile %s", file_path)
+        with zipfile.ZipFile(file_path) as z_file:
+            z_file.extractall(TEMP_DIR / (filename + ".dir"))
+        file = TEMP_DIR / (filename + ".dir") / "data.grib"
+        weather_data = xr.open_dataset(file, engine="cfgrib")
+    else:
+        weather_data = xr.open_dataset(file_path, engine="cfgrib", indexpath="")
     log.info(f"successfully read file {file_path}")
     weather_data = weather_data.to_dataframe()
     weather_data = weather_data.dropna(axis=0)
@@ -185,7 +176,7 @@ def build_dataframe(engine, request: dict, write_lat_lon: bool = True):
                 "ecmwf", con=engine, if_exists="append", chunksize=10000
             )
 
-    nuts3 = gpd.GeoDataFrame.from_file(nuts_path)
+    nuts3 = gpd.read_file(NUTS_PATH)
     # use only nuts_id and coordinates from nuts file so fewer columns have to be joined
     nuts3 = nuts3.loc[:, ["NUTS_ID", "geometry"]]
     nuts3 = nuts3.set_index("NUTS_ID")
@@ -200,13 +191,15 @@ def build_dataframe(engine, request: dict, write_lat_lon: bool = True):
     weather_data = pd.DataFrame(weather_data)
     # coords columns only necessary for the join
     weather_data = weather_data.drop(columns="coords")
-    weather_data = weather_data.rename(columns={"index_right": "nuts_id"})
+    weather_data = weather_data.rename(columns={"NUTS_ID": "nuts_id"})
     weather_data = weather_data.dropna(axis=0)
     # calculate average for all locations inside the current nuts area
     weather_data = weather_data.groupby(["time", "nuts_id"]).mean(numeric_only=True)
     weather_data = weather_data.reset_index()
     weather_data = weather_data.set_index(["time", "latitude", "longitude", "nuts_id"])
-    log.info("preparing to write nuts dataframe into ecmwf_eu database")
+    log.info(
+        "preparing to write nuts dataframe for %s into ecmwf_eu database", filename
+    )
     try:
         weather_data.to_sql(
             "ecmwf_eu",
@@ -222,35 +215,15 @@ def build_dataframe(engine, request: dict, write_lat_lon: bool = True):
         weather_data.to_sql("ecmwf_eu", con=engine, if_exists="append", chunksize=10000)
 
     # Delete files locally to save space
-    file_list = glob.glob(file_path + "*", recursive=True)
-    for file in file_list:
+    for file in Path(file_path.parent).rglob(file_path.name + "*"):
         try:
-            os.remove(file)
-            log.info(f"removed file {file}")
+            if file.is_dir():
+                shutil.rmtree(file)
+            else:
+                file.unlink()
+            log.info("removed file %s", file)
         except OSError as e:
-            log.info(f"Error: {e.filename} - {e.strerror}")
-
-
-def get_latest_date_in_database(
-    engine, start_date: datetime, end_date: datetime = None
-):
-    if not end_date:
-        end_date = datetime.combine(date.today(), datetime.min.time())
-    sql = text(
-        f"select time from ecmwf where time > '{start_date}' and time < '{end_date}' order by time desc limit 1"
-    )
-    try:
-        with engine.begin() as conn:
-            last_date = pd.read_sql(sql, con=conn, parse_dates=["time"]).values[0][0]
-        last_date = pd.to_datetime(str(last_date))
-        last_date = pd.to_datetime(last_date.strftime("%Y-%m-%d %H:%M:%S"))
-        log.info(f"Last date in database is: {last_date}")
-        next_date = last_date + timedelta(hours=1)
-        log.info(f"Next date to crawl: {next_date}")
-        return next_date
-    except Exception as e:
-        log.error(e)
-        return start_date
+            log.error(f"Error removing files: {e}")
 
 
 def daterange(start_date: datetime, end_date: datetime = None):
@@ -259,14 +232,16 @@ def daterange(start_date: datetime, end_date: datetime = None):
     for n in range(
         int((datetime.combine(end_date, datetime.min.time()) - start_date).days)
     ):
-        yield start_date + timedelta(n)
+        yield start_date + timedelta(days=n)
 
 
-def request_builder(dates: list[datetime]):
+def request_list_from_dates(dates: list[datetime]) -> list[dict]:
     dates_dataframe = pd.DataFrame(dates, columns=["Date"])
-    g = dates_dataframe.groupby(pd.Grouper(key="Date", freq="M"))
-    dfs = [group for _, group in g]
-    for month in dfs:
+    grouped_by_months = dates_dataframe.groupby(pd.Grouper(key="Date", freq="M"))
+    months = [group for _, group in grouped_by_months]
+
+    requests_list = []
+    for month in months:
         days = []
         for i in range(month.index.start, month.index.stop):
             days.append(f"{month['Date'].dt.day[i]:02d}")
@@ -274,7 +249,7 @@ def request_builder(dates: list[datetime]):
         for chunk in day_chunks:
             request = dict(
                 format="grib",
-                variable=var_,
+                variable=weather_variables,
                 year=f"{month['Date'].dt.year[month.index.start]}",
                 month=f"{month['Date'].dt.month[month.index.start]:02d}",
                 day=chunk,
@@ -282,13 +257,14 @@ def request_builder(dates: list[datetime]):
             )
             request["area"] = coords
 
-            yield request
+            requests_list.append(request)
+    return requests_list
 
 
 def single_day_request(last_date: datetime):
     request = dict(
         format="grib",
-        variable=var_,
+        variable=weather_variables,
         year=f"{last_date.year}",
         month=f"{last_date.month:02d}",
         day=f"{last_date.day:02d}",
@@ -305,41 +281,82 @@ def divide_month_in_chunks(li, n):
     return ch
 
 
-def main(db_uri: str):
-    # initializing the client for ecmwf service
-    START_DATE = datetime(2019, 1, 1)
-    END_DATE = None  # use today as end
-    ecmwf_client = cdsapi.Client()
-    engine = create_engine(db_uri)
-    create_table(engine)
-    last_date = get_latest_date_in_database(
-        engine, start_date=START_DATE, end_date=END_DATE
-    )
+class EcmwfCrawler(ContinuousCrawler):
+    # Data is only available after 6 hours - so we should not crawl to far
+    # Otherwise we only receive null values
+    OFFSET_FROM_NOW = timedelta(days=2)
 
-    # the requests are build from 00:00 - 23:00 for each day
-    # however, for recent dates the cds API delivers data up until the latest hour of the day it can deliver
-    # that is why a check is necessary to first make sure that the database has dates up until 23:00
-    if last_date.hour != 23:
-        log.info("Creating request for single day")
-        request = single_day_request(last_date)
-        log.info(f"The current request running: {request}")
-        save_data(request, ecmwf_client)
-        build_dataframe(engine, request)
-        last_date = get_latest_date_in_database(
-            engine, start_date=START_DATE, end_date=END_DATE
-        )
+    def __init__(self, schema_name: str, config: CrawlerConfig):
+        super().__init__(schema_name, config)
+        self.ecmwf_client = cdsapi.Client()
+        TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-    dates = []
-    for single_date in daterange(last_date):
-        dates.append(single_date)
+    def get_latest_data(self) -> datetime:
+        query = text("select max(time) from ecmwf")
+        try:
+            with self.engine.connect() as conn:
+                return conn.execute(query).scalar() or TEMPORAL_START
+        except Exception:
+            log.error("No ecmwf latest found")
+            return TEMPORAL_START
 
-    for request in request_builder(dates):
-        log.info(f"The current request running: {request}")
-        save_data(request, ecmwf_client)
-        build_dataframe(engine, request)
+    def get_first_data(self) -> datetime:
+        query = text("select min(time) from ecmwf")
+        try:
+            with self.engine.connect() as conn:
+                return conn.execute(query).scalar() or TEMPORAL_START
+        except Exception:
+            log.error("No ecmwf first found")
+            return TEMPORAL_START
+
+    def create_hypertable_if_not_exists(self) -> None:
+        self.create_single_hypertable_if_not_exists("ecmwf", "time")
+        self.create_single_hypertable_if_not_exists("ecmwf_eu", "time")
+
+    def crawl_from_to(self, begin: datetime, end: datetime):
+        """Crawls data from begin (inclusive) until end (exclusive)
+
+        Args:
+            begin (datetime): included begin datetime from which to crawl
+            end (datetime): exclusive end datetime until which to crawl
+        """
+        if begin < TEMPORAL_START:
+            begin = TEMPORAL_START
+
+        data_available_until = datetime.now() - self.get_minimum_offset()
+
+        if end > data_available_until:
+            end = data_available_until
+
+        last_date = self.get_latest_data()
+        last_date += timedelta(hours=1)
+
+        # the requests are build from 00:00 - 23:00 for each day
+        # however, for recent dates the cds API delivers data up until the latest hour of the day it can deliver
+        # that is why a check is necessary to first make sure that the database has dates up until 23:00
+
+        if last_date.hour != 23:
+            log.info("Creating request for single day")
+            request = single_day_request(last_date)
+            log.info(f"The current request running: {request}")
+            save_ecmwf_request_to_file(request, self.ecmwf_client)
+            build_dataframe(self.engine, request)
+            last_date = self.get_latest_data()
+
+        dates = []
+        for single_date in daterange(last_date):
+            dates.append(single_date)
+
+        for request in request_list_from_dates(dates):
+            log.info(f"The current request running: {request}")
+            save_ecmwf_request_to_file(request, self.ecmwf_client)
+            build_dataframe(self.engine, request)
 
 
 if __name__ == "__main__":
     logging.basicConfig(filename="ecmwf.log", encoding="utf-8", level=logging.INFO)
-    # db_uri = 'sqlite:///./data/weather.db'
-    main(db_uri("weather"))
+    from pathlib import Path
+
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    smard = EcmwfCrawler("ecmwf", config=config)
+    smard.crawl_temporal()

@@ -32,10 +32,12 @@ As seen in the above workflow outline, the data is inserted by scripts which ret
 This is the core part, afterwards, everything is basically usable.
 
 To execute the scripts, you need a python environment.
-As of June 2024 - this works with Python versions 3.9 up to 3.12
+As of June 2025 - this works with Python versions 3.9 up to 3.13
 You can install all python dependencies:
 
 `pip install -r requirements.txt`
+
+Furthermore, you need to copy the `config.example.yml` to `config.yml` and adjust the credentials for access.
 
 And finally run the main crawling script `python crawl_all.py` to download all available sources into the database.
 
@@ -46,7 +48,6 @@ If you want to use the ECMWF crawler you need to create an account at [copernicu
 ## TimeScaleDB
 
 The used database technology for the database server is [TimescaleDB](https://timescale.com/) which is an extension for PostgreSQL (just like PostGIS but for timeseries databases).
-
 
 ### What is a time-series database?
 Normal SQL tables can get quite slow if millions of entries are stored in them.
@@ -69,9 +70,6 @@ On a high level this can be imagined that for a query spanning a year, each of t
 This only works for timeseries tables and is not compatible with non-timeseries data.
 Therefore to increase replication of other tables (like the Marktstammdatenregister), one still needs to have manual replication or use something like [Patroni](https://patroni.readthedocs.io/en/latest/).
 
-
-
-
 ## PostGIS
 The database server also includes the [PostGIS](https://postgis.net/) extension which allows for spatial queries and storage of geospatial data.
 PostGIS is installed once per database and can be used by every schema afterwards.
@@ -86,18 +84,14 @@ Coordinate transformations and other geospatial operations are also possible wit
 Do you know of other interesting open-access databases which are worth mentioning here?
 Maybe some are too volatile, large or unknown and are therefore not useful to store in the [OEP](https://openenergy-platform.org/).
 
-Just send a PR and add a new file in the crawler folder with the main method signature as
-
-```
-def main(db_uri):
-    pass
-```
-
-If your tables should be stored in a new database, you have to add your database to the [init.sql](./init.sql) script too.
-
+Just send a PR and add a new file in the crawler folder with your implemented `ContinuousCrawler` or `DownloadOnceCrawler` and add it to the repository.
 
 ## Citation
 
 You can cite the `open-energy-data-server` through the Conference proceedings:
 
 > Maurer, F., Sejdija, J., & Sander, V. (2024, February 2). Decentralized energy data storages through an Open Energy Database Server. 1st NFDI4Energy Conference (NFDI4Energy), Hanover, Germany. https://doi.org/10.5281/zenodo.10607895
+
+## Using the ECMWF crawler
+
+If you want to use the ECMWF crawler you need to create an account at [copernicus](https://cds.climate.copernicus.eu) to get an API key which allows you to query the API of copernicus. Follow the [instructions](https://cds.climate.copernicus.eu/api-how-to) of copernicus for that.

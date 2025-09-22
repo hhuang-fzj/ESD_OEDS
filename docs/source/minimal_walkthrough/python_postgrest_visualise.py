@@ -43,7 +43,7 @@ def plot_data(data):
     plt.show()
 
 
-def main():
+if __name__ == "__main__":
     data = fetch_data()
     schema_data = fetch_data_schema()
 
@@ -51,7 +51,3 @@ def main():
     print(pd.DataFrame(data).head())
 
     plot_data(data)
-
-
-if __name__ == "__main__":
-    main()

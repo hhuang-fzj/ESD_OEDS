@@ -41,8 +41,9 @@ class NutsCrawler(DownloadOnceCrawler):
         r = requests.get(download_url)
         z = zipfile.ZipFile(io.BytesIO(r.content))
         # extract to shapes folder
-        z.extractall("shapes")
-        geo_path = Path(__file__).parent / "shapes" / "NUTS_RG_01M_2021_4326.shp"
+        shapes_path = Path(__file__).parent / "shapes"
+        z.extractall(shapes_path)
+        geo_path = shapes_path / "NUTS_RG_01M_2021_4326.shp"
 
         geo_information = gpd.read_file(geo_path)
         geo_information = geo_information.to_crs(4326)
@@ -97,4 +98,4 @@ if __name__ == "__main__":
 
     config = load_config(Path(__file__).parent.parent / "config.yml")
     crawler = NutsCrawler("public", config)
-    crawler.crawl_structural()
+    crawler.crawl_structural(True)

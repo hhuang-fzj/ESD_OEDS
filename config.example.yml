@@ -6,7 +6,7 @@ db_uri: "postgresql://opendata:opendata@localhost:6432/opendata?options=--search
 # for local sqlite database
 # db_uri: "sqlite:///{DBNAME}.db"
 entsoe_api_key: "YOUR_ENTSOE_API_KEY"
-regelleistung_api_key: "YOUR_REGELLEISTUNG_API_KEY"
 gie_api_key: "YOUR_GIE_API_KEY"
 ipnt_client_id: "YOUR_IPNT_CLIENT_ID"
 ipnt_client_secret: "YOUR_IPNT_CLIENT_SECRET"
+jao_api_key: "YOUR_JAO_API_KEY"

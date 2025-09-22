@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 class CrawlerConfig(TypedDict):
     db_uri: str
     entsoe_api_key: str
-    regelleistung_api_key: str
     gie_api_key: str
     ipnt_client_id: str
     ipnt_client_secret: str
+    jao_api_key: str
 
 
 def load_config(config_path: Path | str = "config.yml") -> CrawlerConfig:
@@ -38,8 +38,10 @@ class BaseCrawler:
         self.engine = create_engine(self.config["db_uri"], pool_pre_ping=True)
         self.create_schema(schema_name)
 
-    def create_schema(self, schema_name: str) -> str:
-        create_schema_only(self.engine, schema_name)
+    def create_schema(self, schema_name: str) -> None:
+        if self.engine.url.drivername.startswith("postgresql"):
+            with self.engine.begin() as conn:
+                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
 
     def set_metadata(self, metadata_info: dict[str, str]) -> None:
         set_metadata_only(self.engine, metadata_info)
@@ -121,14 +123,8 @@ class ContinuousCrawler(BaseCrawler):
         self.create_hypertable_if_not_exists()
 
 
-def create_schema_only(engine: Engine, schema_name: str) -> None:
-    if engine.url.drivername.startswith("postgresql"):
-        with engine.begin() as conn:
-            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
-
-
 def set_metadata_only(engine: Engine, metadata_info: dict[str, str]):
-    for key in ["concave_hull_geometry", "temporal_start", "temporal_end", "contact"]:
+    for key in ["temporal_start", "temporal_end", "contact"]:
         if key not in metadata_info.keys():
             metadata_info[key] = None
     if "data_date" not in metadata_info.keys():
@@ -137,16 +133,15 @@ def set_metadata_only(engine: Engine, metadata_info: dict[str, str]):
         conn.execute(
             text("""
             INSERT INTO public.metadata
-            (schema_name, data_date, data_source, license, description, contact, concave_hull_geometry, temporal_start, temporal_end)
+            (schema_name, data_date, data_source, license, description, contact, temporal_start, temporal_end)
             VALUES
-            (:schema_name, :data_date, :data_source, :license, :description, :contact, :concave_hull_geometry, :temporal_start, :temporal_end)
+            (:schema_name, :data_date, :data_source, :license, :description, :contact, :temporal_start, :temporal_end)
             ON CONFLICT (schema_name) DO UPDATE SET
                 data_date = EXCLUDED.data_date,
                 data_source = EXCLUDED.data_source,
                 license = EXCLUDED.license,
                 description = EXCLUDED.description,
                 contact = EXCLUDED.contact,
-                concave_hull_geometry = EXCLUDED.concave_hull_geometry,
                 temporal_start = EXCLUDED.temporal_start,
                 temporal_end = EXCLUDED.temporal_end
             """),

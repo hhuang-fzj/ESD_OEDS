@@ -5,8 +5,7 @@
 import bz2
 import logging
 import multiprocessing as mp
-import os
-import os.path as osp
+from datetime import datetime
 from pathlib import Path
 
 import geopandas as gpd
@@ -15,8 +14,10 @@ import pandas as pd
 import pygrib
 import requests
 from shapely.geometry import Point
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from tqdm import tqdm
+
+from common.base_crawler import ContinuousCrawler, load_config
 
 log = logging.getLogger("openDWD_cosmo")
 log.setLevel(logging.INFO)
@@ -36,11 +37,12 @@ to_download = dict(
 )
 
 geo_path = Path(__file__).parent / "shapes" / "NUTS_RG_01M_2021_4326.shp"
+DOWNLOAD_DIR = Path(__file__).parent / "grb_files"
 
 geo_information = gpd.read_file(geo_path)
-data_path = osp.join(osp.dirname(__file__), "data")
-dwd_latitude = np.load(data_path + "/lat_coordinates.npy")
-dwd_longitude = np.load(data_path + "/lon_coordinates.npy")
+DATA_PATH = Path(__file__).parent / "data"
+dwd_latitude = np.load(DATA_PATH / "lat_coordinates.npy")
+dwd_longitude = np.load(DATA_PATH / "lon_coordinates.npy")
 
 
 def create_nuts_map(coords):
@@ -59,11 +61,10 @@ def create_nuts_map(coords):
         return zipping[0]
 
 
-class DWDCrawler:
-    def __init__(self, nuts_matrix, download_dir, database: str):
-        self.engine = create_engine(database)
+class DWDCrawler(ContinuousCrawler):
+    def __init__(self, schema_name, config, nuts_matrix):
+        super().__init__(schema_name, config)
         self.nuts_matrix = nuts_matrix
-        self.download_dir = download_dir
         nuts = np.unique(nuts_matrix[[nuts_matrix != "x"]].reshape(-1))
         self.countries = np.asarray([area[:2] for area in nuts])
         self.values = np.zeros_like(nuts)
@@ -89,36 +90,27 @@ class DWDCrawler:
                 )
             )
 
-        try:
-            query_create_hypertable = text(
-                "SELECT public.create_hypertable('cosmo', 'time', if_not_exists => TRUE, migrate_data => TRUE);"
-            )
-            with self.engine.begin() as conn:
-                conn.execute(query_create_hypertable)
-            log.info("created hypertable cosmo")
-        except Exception as e:
-            log.error(f"could not create hypertable: {e}")
+    def create_hypertable_if_not_exists(self) -> None:
+        self.create_single_hypertable_if_not_exists("cosmo", "time")
 
     def _download_data(self, key, year, month):
         response = requests.get(f"{base_url}{to_download[key]}{year}{month}.grb.bz2")
         log.info(f"get weather for {key} with status code {response.status_code}")
 
         weather_data = bz2.decompress(response.content)
-        try:
-            os.makedirs(self.download_dir)
-        except FileExistsError:
-            # directory already exists
-            pass
 
-        with open(f"{self.download_dir}/weather{year}{month}", "wb") as file:
+        DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+        with open(DOWNLOAD_DIR / f"weather{year}{month}", "wb") as file:
             file.write(weather_data)
 
     def _delete_data(self, year, month):
-        if osp.isfile(f"{self.download_dir}/weather{year}{month}"):
-            os.remove(f"{self.download_dir}/weather{year}{month}")
+        path = DOWNLOAD_DIR / f"weather{year}{month}"
+        if path.is_file():
+            path.unlink()
 
     def _create_dataframe(self, key, year, month):
-        weather_data = pygrib.open(f"{self.download_dir}/weather{year}{month}")
+        weather_data = pygrib.open(DOWNLOAD_DIR / f"weather{year}{month}")
         selector = str(weather_data.readline()).split("1:")[1].split(":")[0]
         size = len(weather_data.select(name=selector))
 
@@ -145,11 +137,12 @@ class DWDCrawler:
 
         return pd.concat(data_frames, ignore_index=True)
 
-    def write_data(self, start, end):
+    def crawl_from_to(self, begin: datetime, end: datetime):
         date_range = pd.date_range(
-            start=pd.to_datetime(start, format="%Y%m"),
-            end=pd.to_datetime(end, format="%Y%m"),
+            start=start,
+            end=end,
             freq="MS",
+            # month start
         )
         with self.engine.begin() as conn:
             for date in tqdm(date_range):
@@ -194,56 +187,22 @@ def create_nuts_matrix(nuts_matrix_path):
     log.info(f"created nuts matrix at {nuts_matrix_path}")
 
 
-def main(db_uri):
-    nuts_matrix_path = osp.join(osp.dirname(__file__), "data", "nuts_matrix.npy")
-    if not osp.isfile(nuts_matrix_path):
-        create_nuts_matrix(nuts_matrix_path)
-
-    nuts_matrix = np.load(nuts_matrix_path, allow_pickle=True)
-    download_dir = osp.join(osp.dirname(__file__), "grb_files")
-
-    crawler = DWDCrawler(nuts_matrix, download_dir, db_uri)
-    crawler.create_table()
-    crawler.write_data("199501", "199502")
-
-
 if __name__ == "__main__":
     import numpy as np
 
     logging.basicConfig()
 
-    nuts_matrix_path = osp.join(osp.dirname(__file__), "data", "nuts_matrix.npy")
-
-    if not osp.isfile(nuts_matrix_path):
+    nuts_matrix_path = DATA_PATH / "nuts_matrix.npy"
+    if not nuts_matrix_path.is_file():
         create_nuts_matrix(nuts_matrix_path)
+
     nuts_matrix = np.load(nuts_matrix_path, allow_pickle=True)
 
-    db_uri = os.getenv("DATABASE_URI", "sqlite:///./weather.db")
-    start = os.getenv("START_DATE", "199501")
-    end = os.getenv("END_DATE", "199512")
-
-    download_dir = osp.join(osp.dirname(__file__), "grb_files")
-
-    crawler = DWDCrawler(nuts_matrix, download_dir, db_uri)
+    config = load_config(Path(__file__).parent.parent / "config.yml")
+    crawler = DWDCrawler("weather", config, nuts_matrix)
     crawler.create_table()
-    date = "20190101"
-    crawler.write_data(start, date)
+    crawler.create_hypertable_if_not_exists()
 
-    # # old code using multiprocessing:
-    # def collect_data(start, end):
-    #     try:
-    #         log.info(f'started downloading for {start} to {end}')
-    #         crawler._download_data(start, end)
-    #         log.info(f'finished downloading for {start} to {end}')
-    #     except Exception as e:
-    #         log.error(repr(e))
-    #         log.exception(f'Error in worker with interval {start} - {end}')
-
-    # processes = []
-    # for year in range(1995, 2019):
-    #     process = mp.Process(target=collect_data, args=([f'{year}01', f'{year}12']))
-    #     processes.append(process)
-    #     process.start()
-
-    # for process in processes:
-    #     process.join()
+    start = datetime(1995, 1, 1)
+    end = datetime(1995, 12, 1)
+    crawler.crawl_from_to(start, end)
