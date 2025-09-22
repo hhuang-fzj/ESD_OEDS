@@ -32,10 +32,12 @@ As seen in the above workflow outline, the data is inserted by scripts which ret
 This is the core part, afterwards, everything is basically usable.
 
 To execute the scripts, you need a python environment.
-As of June 2024 - this works with Python versions 3.9 up to 3.12
+As of June 2025 - this works with Python versions 3.9 up to 3.13
 You can install all python dependencies:
 
 `pip install -r requirements.txt`
+
+Furthermore, you need to copy the `config.example.yml` to `config.yml` and adjust the credentials for access.
 
 And finally run the main crawling script `python crawl_all.py` to download all available sources into the database.
 

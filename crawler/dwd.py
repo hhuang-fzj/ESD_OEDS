@@ -5,7 +5,6 @@
 import bz2
 import logging
 import multiprocessing as mp
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -99,11 +98,8 @@ class DWDCrawler(ContinuousCrawler):
         log.info(f"get weather for {key} with status code {response.status_code}")
 
         weather_data = bz2.decompress(response.content)
-        try:
-            os.makedirs(DOWNLOAD_DIR)
-        except FileExistsError:
-            # directory already exists
-            pass
+
+        DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
         with open(DOWNLOAD_DIR / f"weather{year}{month}", "wb") as file:
             file.write(weather_data)

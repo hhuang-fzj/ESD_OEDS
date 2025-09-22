@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 class CrawlerConfig(TypedDict):
     db_uri: str
     entsoe_api_key: str
-    regelleistung_api_key: str
     gie_api_key: str
     ipnt_client_id: str
     ipnt_client_secret: str
+    jao_api_key: str
 
 
 def load_config(config_path: Path | str = "config.yml") -> CrawlerConfig:
