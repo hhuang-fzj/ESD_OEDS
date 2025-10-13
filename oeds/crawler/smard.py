@@ -146,7 +146,7 @@ class SmardCrawler(ContinuousCrawler):
             with self.engine.connect() as conn:
                 return conn.execute(query).scalar() or TEMPORAL_START
         except Exception:
-            log.error("No smard data found")
+            log.error("No latest smard data found")
             return TEMPORAL_START
 
     def get_first_data(self) -> datetime:
@@ -155,7 +155,7 @@ class SmardCrawler(ContinuousCrawler):
             with self.engine.connect() as conn:
                 return conn.execute(query).scalar() or TEMPORAL_START
         except Exception:
-            log.error("No smard data found")
+            log.error("No first smard data found")
             return TEMPORAL_START
 
     def create_hypertable_if_not_exists(self) -> None:

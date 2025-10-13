@@ -22,9 +22,9 @@ from oeds.crawler.opec import OpecDownloader
 from oeds.crawler.opsd import OpsdCrawler
 from oeds.crawler.smard import SmardCrawler
 from oeds.crawler.vea_industrial_load_profiles import IndustrialLoadProfileCrawler
-from oeds.crawler.windmodel import WindTurbineCrawler
 
 crawlers: dict[str, type[BaseCrawler]] = {
+    "public": NutsCrawler,
     "chargepoint": ChargepointDownloader,
     "e2watch": E2WatchCrawler,
     "eon_grid_fees": EonGridFeeCrawler,
@@ -40,9 +40,7 @@ crawlers: dict[str, type[BaseCrawler]] = {
     "ninja": NinjaCrawler,
     "opec": OpecDownloader,
     "opsd": OpsdCrawler,
-    "public": NutsCrawler,
     "smard": SmardCrawler,
     "vea_industrial_load_profiles": IndustrialLoadProfileCrawler,
-    "windmodel": WindTurbineCrawler,
     "weather": EcmwfCrawler,
 }

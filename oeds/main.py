@@ -44,21 +44,30 @@ def cli(args=None):
         metavar="LOGLEVEL",
         choices=set(logging._nameToLevel.keys()),
     )
+    parser.add_argument("--config", type=str, help="Path to config.yaml")
     parsed_args = parser.parse_args(args)
 
     logging.basicConfig(level=parsed_args.loglevel)
     from oeds.crawler import crawlers
 
     selected_crawlers = (
-        set(parsed_args.crawler_list)
-        if parsed_args.crawler_list
-        else set(crawlers.keys())
+        parsed_args.crawler_list if parsed_args.crawler_list else list(crawlers.keys())
     )
-    config = {"db_uri": parsed_args.db}
+    if parsed_args.config:
+        config = load_config(parsed_args.config)
+    else:
+        config = {}
+
+    if parsed_args.db:
+        config["db_uri"] = parsed_args.db
 
     for crawler_name in selected_crawlers:
         log.info("Starting crawler: %s", crawler_name)
-        crawler_class = crawlers[crawler_name]
+        try:
+            crawler_class = crawlers[crawler_name]
+        except Exception:
+            raise ValueError(f"crawler {crawler_name} does not exist")
+
         crawler = crawler_class(crawler_name, config)
         start_crawler(crawler)
 
@@ -67,7 +76,7 @@ if __name__ == "__main__":
     logging.basicConfig()
     from oeds.crawler import crawlers
 
-    config = load_config(Path(__file__).parent / "config.yml")
+    config = load_config(Path(__file__).parent.parent / "config.yml")
     for schema_name, crawler_class in crawlers.items():
         crawler = crawler_class(schema_name, config)
         start_crawler(crawler)

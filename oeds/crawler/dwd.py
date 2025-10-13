@@ -36,11 +36,11 @@ to_download = dict(
     cloud_cover="CLCT/CLCT.2D.",
 )
 
-geo_path = Path(__file__).parent / "shapes" / "NUTS_RG_01M_2021_4326.shp"
-DOWNLOAD_DIR = Path(__file__).parent / "grb_files"
+geo_path = Path(__file__).parent.parent / "shapes" / "NUTS_RG_01M_2021_4326.shp"
+DOWNLOAD_DIR = Path(__file__).parent.parent / "grb_files"
 
 geo_information = gpd.read_file(geo_path)
-DATA_PATH = Path(__file__).parent / "data"
+DATA_PATH = Path(__file__).parent.parent / "data"
 dwd_latitude = np.load(DATA_PATH / "lat_coordinates.npy")
 dwd_longitude = np.load(DATA_PATH / "lon_coordinates.npy")
 

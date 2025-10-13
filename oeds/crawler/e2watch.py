@@ -196,7 +196,9 @@ class E2WatchCrawler(ContinuousCrawler, DownloadOnceCrawler):
                 f"There does not exist a table buildings yet. The buildings will now be crawled. {e}"
             )
 
-        df = pd.read_csv(Path(__file__).parent / "data" / "e2watch_building_data.csv")
+        df = pd.read_csv(
+            Path(__file__).parent.parent / "data" / "e2watch_building_data.csv"
+        )
         df = df.set_index(["bilanzkreis_id"])
         return df
 

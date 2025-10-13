@@ -41,6 +41,15 @@ Furthermore, you need to copy the `config.example.yml` to `config.yml` and adjus
 
 And finally run the main crawling script `python main.py` to download all available sources into the database.
 
+## CLI tool
+
+After installing the library with `pip install -e .`,
+there also is a CLI tool to download/update a given dataset using:
+
+`oeds --db="postgresql://opendata:opendata@localhost:6432/opendata?options=--search_path={DBNAME}" --crawler-list public opec smard`
+
+For more information, check out `oeds -h`.
+
 ## Using the ECMWF crawler
 
 If you want to use the ECMWF crawler you need to create an account at [copernicus](https://cds.climate.copernicus.eu) to get an API key which allows you to query the API of copernicus. Follow the [instructions](https://cds.climate.copernicus.eu/api-how-to) of copernicus for that.

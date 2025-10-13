@@ -54,7 +54,7 @@ class KwpCrawler(DownloadOnceCrawler):
             z = zipfile.ZipFile(io.BytesIO(response.content))
             logging.log(logging.INFO, "Downloaded the KWP NRW ZIP file")
 
-            base_path = Path(__file__).parent / "data" / "kwp_nrw"
+            base_path = Path(__file__).parent.parent / "data" / "kwp_nrw"
             if not base_path.exists():
                 z.extractall(base_path)
                 logging.log(logging.INFO, "Extracted KWP NRW GDB")
@@ -97,7 +97,7 @@ class KwpCrawler(DownloadOnceCrawler):
             )
 
     def clean(self):
-        base_path = Path(__file__).parent / "data" / "kwp_nrw"
+        base_path = Path(__file__).parent.parent / "data" / "kwp_nrw"
         file_list = os.listdir(base_path / "Waermebedarf_NRW.gdb")
         for file_name in file_list:
             file_path = base_path / "Waermebedarf_NRW.gdb" / file_name

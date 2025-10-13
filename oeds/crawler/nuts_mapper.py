@@ -41,7 +41,7 @@ class NutsCrawler(DownloadOnceCrawler):
         r = requests.get(download_url)
         z = zipfile.ZipFile(io.BytesIO(r.content))
         # extract to shapes folder
-        shapes_path = Path(__file__).parent / "shapes"
+        shapes_path = Path(__file__).parent.parent / "shapes"
         z.extractall(shapes_path)
         geo_path = shapes_path / "NUTS_RG_01M_2021_4326.shp"
 

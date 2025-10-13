@@ -38,7 +38,7 @@ log = logging.getLogger("ecmwf")
 # path of nuts file
 # downloaded from
 # https://ec.europa.eu/eurostat/de/web/gisco/geodata/reference-data/administrative-units-statistical-units/nuts#nuts21
-NUTS_PATH = Path(__file__).parent / "shapes/NUTS_RG_01M_2021_4326.shp"
+NUTS_PATH = Path(__file__).parent.parent / "shapes/NUTS_RG_01M_2021_4326.shp"
 TEMP_DIR = Path(__file__).parent.parent / "ecmwf_grb_files"
 
 # coords for europe according to:

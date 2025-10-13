@@ -4,7 +4,6 @@
 
 import logging
 
-import cloudscraper
 import json5  # parse js-dict to python
 import numpy as np
 import pandas as pd
@@ -14,8 +13,6 @@ from sqlalchemy import text
 from tqdm import tqdm  # fancy for loop
 
 from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, DownloadOnceCrawler, load_config
-
-scraper = cloudscraper.create_scraper()
 
 """
 Downloads the available powercurve data from https://www.wind-turbine-models.com/ to a csv file
