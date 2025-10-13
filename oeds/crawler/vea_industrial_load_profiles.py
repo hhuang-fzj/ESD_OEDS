@@ -175,7 +175,6 @@ class IndustrialLoadProfileCrawler(DownloadOnceCrawler):
                 name=name,
                 con=self.engine,
                 if_exists="append",
-                schema=self.schema_name,
                 index=False,
             )
 

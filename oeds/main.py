@@ -23,25 +23,38 @@ def start_crawler(crawler: BaseCrawler):
     if isinstance(crawler, ContinuousCrawler):
         crawler.crawl_temporal()
 
+
 def cli(args=None):
     parser = argparse.ArgumentParser(description="Open-Energy-Data-Server CLI")
     parser.add_argument(
-        "--db", type=str,
+        "--db",
+        type=str,
         help="set the DB URI",
-        default='postgresql://opendata:opendata@localhost:6432/opendata?options=--search_path={DBNAME}'
+        default="postgresql://opendata:opendata@localhost:6432/opendata?options=--search_path={DBNAME}",
     )
     parser.add_argument(
-        "--crawler-list", nargs='*',
-        help="List of crawlers to run (default: all)"
+        "--crawler-list", nargs="*", help="List of crawlers to run (default: all)"
+    )
+    parser.add_argument(
+        "-l",
+        "--loglevel",
+        help="logging level used for file log",
+        default="INFO",
+        type=str,
+        metavar="LOGLEVEL",
+        choices=set(logging._nameToLevel.keys()),
     )
     parsed_args = parser.parse_args(args)
 
-    logging.basicConfig()
+    logging.basicConfig(level=parsed_args.loglevel)
     from oeds.crawler import crawlers
-    selected_crawlers = set(parsed_args.crawler_list) if parsed_args.crawler_list else set(crawlers.keys())
-    config = {
-        "db_uri": parsed_args.db
-    }
+
+    selected_crawlers = (
+        set(parsed_args.crawler_list)
+        if parsed_args.crawler_list
+        else set(crawlers.keys())
+    )
+    config = {"db_uri": parsed_args.db}
 
     for crawler_name in selected_crawlers:
         log.info("Starting crawler: %s", crawler_name)
@@ -49,9 +62,11 @@ def cli(args=None):
         crawler = crawler_class(crawler_name, config)
         start_crawler(crawler)
 
+
 if __name__ == "__main__":
     logging.basicConfig()
     from oeds.crawler import crawlers
+
     config = load_config(Path(__file__).parent / "config.yml")
     for schema_name, crawler_class in crawlers.items():
         crawler = crawler_class(schema_name, config)

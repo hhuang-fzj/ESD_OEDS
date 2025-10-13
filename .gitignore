@@ -16,6 +16,7 @@ ninja_*
 /env/
 .env
 *.db
+*.egg-info
 shapes
 crawler/data/Waermebedarf_NRW.gdb/
 data/pgadmin

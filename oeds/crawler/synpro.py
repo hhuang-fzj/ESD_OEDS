@@ -37,10 +37,6 @@ metadata_info = {
 
 
 class SynproLoadProfileCrawler(DownloadOnceCrawler):
-    def __init__(self, schema_name, config):
-        super().__init__(schema_name, config)
-        self.schema_name = schema_name
-
     def structure_exists(self):
         try:
             query = text(
@@ -159,7 +155,6 @@ class SynproLoadProfileCrawler(DownloadOnceCrawler):
                 name=f"{name}_{key}",
                 con=self.engine,
                 if_exists="replace",
-                schema=self.schema_name,
                 index=False,
             )
 
