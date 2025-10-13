@@ -7,7 +7,7 @@ from io import StringIO
 
 import pandas as pd
 import requests
-from crawler.common.base_crawler import DownloadOnceCrawler, load_config
+from oeds.base_crawler import DownloadOnceCrawler, load_config
 from sqlalchemy import text
 
 log = logging.getLogger("opsd")

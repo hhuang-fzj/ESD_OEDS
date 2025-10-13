@@ -39,7 +39,7 @@ You can install all python dependencies:
 
 Furthermore, you need to copy the `config.example.yml` to `config.yml` and adjust the credentials for access.
 
-And finally run the main crawling script `python crawl_all.py` to download all available sources into the database.
+And finally run the main crawling script `python main.py` to download all available sources into the database.
 
 ## Using the ECMWF crawler
 

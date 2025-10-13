@@ -51,7 +51,7 @@ Next, you can run all crawlers by running:
 WARNING: This will take a long time and consume a lot of resources. It is recommended to run over the weekend or indivudually.
 
 ```bash
-python crawl_all.py
+python main.py
 ```
 
 or

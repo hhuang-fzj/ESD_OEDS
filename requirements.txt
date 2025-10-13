@@ -17,6 +17,7 @@ json5
 lxml
 numpy
 openpyxl
+open-mastr
 pandas
 psycopg2-binary
 py7zr<1
