@@ -15,7 +15,7 @@ import pandas as pd
 import requests
 from sqlalchemy import text
 
-from oeds.base_crawler import ContinuousCrawler, load_config
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, ContinuousCrawler, load_config
 
 log = logging.getLogger("smard")
 
@@ -246,8 +246,7 @@ class SmardCrawler(ContinuousCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
-    from pathlib import Path
 
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     smard = SmardCrawler("smard", config=config)
     smard.crawl_temporal()

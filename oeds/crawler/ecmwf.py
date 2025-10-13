@@ -18,7 +18,12 @@ import xarray as xr
 from shapely.geometry import Point
 from sqlalchemy import text
 
-from oeds.base_crawler import ContinuousCrawler, CrawlerConfig, load_config
+from oeds.base_crawler import (
+    DEFAULT_CONFIG_LOCATION,
+    ContinuousCrawler,
+    CrawlerConfig,
+    load_config,
+)
 
 """
     Note that only requests with no more that 1000 items at a time are valid.
@@ -357,6 +362,6 @@ if __name__ == "__main__":
     logging.basicConfig(filename="ecmwf.log", encoding="utf-8", level=logging.INFO)
     from pathlib import Path
 
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     smard = EcmwfCrawler("ecmwf", config=config)
     smard.crawl_temporal()

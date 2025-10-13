@@ -12,7 +12,6 @@ import logging
 import os
 import time
 from datetime import timedelta
-from pathlib import Path
 
 import pandas as pd
 from entsoe import EntsoePandasClient
@@ -22,7 +21,7 @@ from requests.exceptions import HTTPError
 from sqlalchemy import text
 from tqdm import tqdm
 
-from oeds.base_crawler import ContinuousCrawler, load_config
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, ContinuousCrawler, load_config
 
 log = logging.getLogger("entsoe")
 log.setLevel(logging.INFO)
@@ -627,7 +626,7 @@ if __name__ == "__main__":
     Generate Token as documented here:
     https://iop-transparency.entsoe.eu/content/static_content/download?path=/Static%20content/API-Token-Management.pdf
     """
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     env_api_key = os.getenv("ENTSOE_API_KEY")
     if env_api_key:
         config["entsoe_api_key"] = env_api_key

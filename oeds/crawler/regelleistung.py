@@ -11,14 +11,13 @@ import logging
 import sys
 import warnings
 from datetime import date, timedelta
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import sqlalchemy
 from sqlalchemy import text
 
-from oeds.base_crawler import ContinuousCrawler, load_config
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, ContinuousCrawler, load_config
 
 log = logging.getLogger("regelleistung")
 log.setLevel(logging.INFO)
@@ -679,6 +678,6 @@ class RegelleistungCrawler(ContinuousCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig()
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     crawler = RegelleistungCrawler("regelleistung", config)
     crawler.crawl_temporal()

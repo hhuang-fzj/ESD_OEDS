@@ -19,7 +19,7 @@ import requests
 import yfinance as yf
 from sqlalchemy import text
 
-from oeds.base_crawler import ContinuousCrawler, load_config
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, ContinuousCrawler, load_config
 
 log = logging.getLogger("instrat_pl")
 log.setLevel(logging.INFO)
@@ -148,8 +148,7 @@ class InstratPlCrawler(ContinuousCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig()
-    from pathlib import Path
 
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     mastr = InstratPlCrawler("instrat_pl", config=config)
     mastr.crawl_temporal()

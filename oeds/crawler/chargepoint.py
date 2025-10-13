@@ -9,7 +9,7 @@ import requests
 from bs4 import BeautifulSoup
 from sqlalchemy import text
 
-from oeds.base_crawler import DownloadOnceCrawler, load_config
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, DownloadOnceCrawler, load_config
 
 log = logging.getLogger(__name__)
 
@@ -126,8 +126,7 @@ class ChargepointDownloader(DownloadOnceCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    from pathlib import Path
 
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     chargepoint = ChargepointDownloader("chargepoint", config=config)
     chargepoint.crawl_structural(recreate=False)

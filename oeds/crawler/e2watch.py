@@ -12,6 +12,7 @@ import requests
 from sqlalchemy import text
 
 from oeds.base_crawler import (
+    DEFAULT_CONFIG_LOCATION,
     ContinuousCrawler,
     CrawlerConfig,
     DownloadOnceCrawler,
@@ -272,7 +273,7 @@ if __name__ == "__main__":
     logging.basicConfig(filename="e2watch.log", encoding="utf-8", level=logging.INFO)
     from pathlib import Path
 
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     e2watch = E2WatchCrawler("e2watch", config=config)
     e2watch.crawl_structural(recreate=False)
     e2watch.crawl_temporal()

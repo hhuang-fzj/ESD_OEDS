@@ -5,13 +5,12 @@
 import logging
 import re
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pandas as pd
 import requests
 from sqlalchemy import text
 
-from oeds.base_crawler import ContinuousCrawler, load_config
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, ContinuousCrawler, load_config
 
 log = logging.getLogger("eview")
 log.setLevel(logging.INFO)
@@ -147,7 +146,7 @@ class EViewCrawler(ContinuousCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig()
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     ec = EViewCrawler("eview", config)
     plant = "FI"
     ec.crawl_temporal()

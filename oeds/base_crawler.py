@@ -12,6 +12,8 @@ from sqlalchemy import Engine, create_engine, text
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CONFIG_LOCATION = Path(__file__).parent.parent / "config.yml"
+
 
 class CrawlerConfig(TypedDict):
     db_uri: str

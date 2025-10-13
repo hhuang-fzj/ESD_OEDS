@@ -17,7 +17,7 @@ from shapely.geometry import Point
 from sqlalchemy import text
 from tqdm import tqdm
 
-from oeds.base_crawler import ContinuousCrawler, load_config
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, ContinuousCrawler, load_config
 
 log = logging.getLogger("openDWD_cosmo")
 log.setLevel(logging.INFO)
@@ -198,7 +198,7 @@ if __name__ == "__main__":
 
     nuts_matrix = np.load(nuts_matrix_path, allow_pickle=True)
 
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     crawler = DWDCrawler("weather", config, nuts_matrix)
     crawler.create_table()
     crawler.create_hypertable_if_not_exists()

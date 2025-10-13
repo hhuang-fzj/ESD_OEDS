@@ -11,7 +11,7 @@ import requests
 from sqlalchemy import text
 from tqdm import tqdm
 
-from oeds.base_crawler import DownloadOnceCrawler, load_config
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, DownloadOnceCrawler, load_config
 
 log = logging.getLogger("vea-industrial-load-profiles")
 
@@ -194,9 +194,8 @@ if __name__ == "__main__":
         format="%(asctime)s.%(msecs)03d %(levelname)s %(module)s - %(funcName)s: %(message)s",
         datefmt="%d-%m-%Y %H:%M:%S",
     )
-    from pathlib import Path
 
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     crawler = IndustrialLoadProfileCrawler("vea_industrial_load_profiles", config)
     crawler.crawl_structural()
     crawler.set_metadata(metadata_info)

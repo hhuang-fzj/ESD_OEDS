@@ -4,6 +4,7 @@
 
 import logging
 
+import cloudscraper
 import json5  # parse js-dict to python
 import numpy as np
 import pandas as pd
@@ -12,12 +13,7 @@ from bs4 import BeautifulSoup  # parse html
 from sqlalchemy import text
 from tqdm import tqdm  # fancy for loop
 
-from oeds.base_crawler import (
-    DownloadOnceCrawler,
-    load_config,
-)
-
-import cloudscraper
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, DownloadOnceCrawler, load_config
 
 scraper = cloudscraper.create_scraper()
 
@@ -126,9 +122,8 @@ class WindTurbineCrawler(DownloadOnceCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig()
-    from pathlib import Path
 
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     craw = WindTurbineCrawler("windmodel", config)
     craw.crawl_structural(recreate=False)
 

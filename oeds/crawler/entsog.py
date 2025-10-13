@@ -12,14 +12,13 @@ import logging
 import time
 import urllib
 from datetime import date, datetime, timedelta
-from pathlib import Path
 
 import pandas as pd
 import requests
 from sqlalchemy import text
 from tqdm import tqdm
 
-from oeds.base_crawler import ContinuousCrawler, load_config
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, ContinuousCrawler, load_config
 
 log = logging.getLogger("entsog")
 log.setLevel(logging.INFO)
@@ -260,7 +259,7 @@ class EntsogCrawler(ContinuousCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig(level="INFO")
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
 
     craw = EntsogCrawler("entsog", config)
     craw.crawl_temporal()

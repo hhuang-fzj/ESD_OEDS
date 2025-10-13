@@ -14,7 +14,6 @@ https://data.boerman.dev/d/5CYxW2JVz/flows-scheduled-commercial-exchanges-day-ah
 
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pandas as pd
 import requests
@@ -25,7 +24,7 @@ from jao import JaoAPIClient
 from sqlalchemy import MetaData, text
 from sqlalchemy.exc import OperationalError
 
-from oeds.base_crawler import ContinuousCrawler, load_config
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, ContinuousCrawler, load_config
 
 log = logging.getLogger("jao")
 
@@ -296,7 +295,7 @@ class JaoCrawler(ContinuousCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig(level="INFO")
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     craw = JaoCrawler("jao", config)
 
     now = datetime.now()

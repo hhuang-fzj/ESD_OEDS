@@ -21,12 +21,16 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pandas as pd
 from roiti.gie import GiePandasClient
 
-from oeds.base_crawler import ContinuousCrawler, CrawlerConfig, load_config
+from oeds.base_crawler import (
+    DEFAULT_CONFIG_LOCATION,
+    ContinuousCrawler,
+    CrawlerConfig,
+    load_config,
+)
 
 log = logging.getLogger("gie")
 log.setLevel(logging.INFO)
@@ -157,7 +161,7 @@ class GieCrawler(ContinuousCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig()
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     ec = GieCrawler("gie", config)
     # ec.crawl_temporal()
     ec.create_hypertable_if_not_exists()

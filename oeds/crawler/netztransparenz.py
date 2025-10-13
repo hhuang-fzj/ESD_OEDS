@@ -23,7 +23,7 @@ import pandas as pd
 import requests
 import sqlalchemy as sql
 
-from oeds.base_crawler import ContinuousCrawler, load_config
+from oeds.base_crawler import DEFAULT_CONFIG_LOCATION, ContinuousCrawler, load_config
 
 log = logging.getLogger("netztransparenz")
 log.setLevel(logging.INFO)
@@ -551,9 +551,8 @@ class NetztransparenzCrawler(ContinuousCrawler):
 
 if __name__ == "__main__":
     logging.basicConfig()
-    from pathlib import Path
 
-    config = load_config(Path(__file__).parent.parent / "config.yml")
+    config = load_config(DEFAULT_CONFIG_LOCATION)
     craw = NetztransparenzCrawler("netztransparenz", config=config)
     craw.crawl_temporal()
     craw.set_metadata(metadata_info)
