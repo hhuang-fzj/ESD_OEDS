@@ -216,7 +216,13 @@ class EntsoeCrawler(ContinuousCrawler):
                 f"error downloading {proc.__name__}, {country}, {start}, {end}: {e}"
             )
 
-    def get_latest_crawled_timestamp(self, tablename, start: datetime | None = None, end: datetime | None = None, tz="Europe/Berlin"):
+    def get_latest_crawled_timestamp(
+        self,
+        tablename,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        tz="Europe/Berlin",
+    ):
         """
         Find the best Start and end for the given procedurename by finding the last timestemp where data was collected for.
 
@@ -469,9 +475,7 @@ class EntsoeCrawler(ContinuousCrawler):
         start_, end_ = self.get_latest_crawled_timestamp(
             query_per_plant.__name__, begin, end
         )
-        self.download_entsoe(
-            countries, query_per_plant, start_, end=end_
-        )
+        self.download_entsoe(countries, query_per_plant, start_, end=end_)
 
         try:
             with self.engine.begin() as conn:
@@ -523,7 +527,12 @@ class EntsoeCrawler(ContinuousCrawler):
                 continue
         return plant_countries
 
-    def crawl_temporal(self, begin: datetime | None = None, end: datetime | None = None, countries=all_countries):
+    def crawl_temporal(
+        self,
+        begin: datetime | None = None,
+        end: datetime | None = None,
+        countries=all_countries,
+    ):
         """
         Runs everything which is needed to update the database and pull the data since the last successful pull.
 
@@ -536,9 +545,7 @@ class EntsoeCrawler(ContinuousCrawler):
 
         """
         proc_cap = self.client.query_installed_generation_capacity_per_unit
-        start_, end_ = self.get_latest_crawled_timestamp(
-            proc_cap.__name__, begin, end
-        )
+        start_, end_ = self.get_latest_crawled_timestamp(proc_cap.__name__, begin, end)
         delta = end_ - start_
 
         if delta.days > 365:
@@ -557,9 +564,7 @@ class EntsoeCrawler(ContinuousCrawler):
         # Download load and generation
         # hier könnte man parallelisieren
         for proc in ts_procs:
-            start_, end_ = self.get_latest_crawled_timestamp(
-                proc.__name__, begin, end
-            )
+            start_, end_ = self.get_latest_crawled_timestamp(proc.__name__, begin, end)
             self.download_entsoe(countries, proc, start_, end_)
 
         self.pull_crossborders(begin, end)
