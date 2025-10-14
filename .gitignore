@@ -10,15 +10,10 @@ __pycache__
 *.grb
 *.ipynb
 .venv
-config.yml
-ninja_*
-/axxteq
-/env/
 .env
 *.db
 *.egg-info
 shapes
-crawler/data/Waermebedarf_NRW.gdb/
+config.yml
 data/pgadmin
-data/open-data-ha/data
-/dashboard/node_modules
+data/open-data-ha
