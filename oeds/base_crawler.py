@@ -32,9 +32,9 @@ def load_config(config_path: Path | str = "config.yml") -> CrawlerConfig:
 
 class BaseCrawler:
     def __init__(self, schema_name: str, config: CrawlerConfig):
-        self.config = config
         if "db_uri" not in config.keys():
             raise ValueError("Please provide a 'db_uri' in the config")
+        self.config = config.copy()
 
         self.config["db_uri"] = config["db_uri"].format(DBNAME=schema_name)
         self.engine = create_engine(self.config["db_uri"], pool_pre_ping=True)

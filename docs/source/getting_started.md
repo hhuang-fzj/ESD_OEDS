@@ -51,13 +51,11 @@ Next, you can run all crawlers by running:
 WARNING: This will take a long time and consume a lot of resources. It is recommended to run over the weekend or indivudually.
 
 ```bash
-python main.py
+python oeds/main.py
 ```
 
-or
-
 ```bash
-python -m crawl_all
+oeds --db="postgresql://opendata:opendata@localhost:6432/opendata?options=--search_path={DBNAME}" --config ./config.yml
 ```
 
 This will execute all crawlers and populate the database with data and metadata.
@@ -65,14 +63,19 @@ This will execute all crawlers and populate the database with data and metadata.
 To run a single crawler, navigate to the /crawler directory and run:
 
 ```bash
-python <crawler_name>.py
+python oeds/crawler/<crawler_name>.py
 ```
 
-or
+## CLI tool
+
+After installing the library with `pip install -e .`,
+there also is a CLI tool to download/update a given dataset using:
 
 ```bash
-python -m <crawler_name>
+oeds --db="postgresql://opendata:opendata@localhost:6432/opendata?options=--search_path={DBNAME}" --crawler-list public opec smard
 ```
+
+For more information, check out `oeds -h`.
 
 ## Usage
 
