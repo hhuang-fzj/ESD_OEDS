@@ -39,7 +39,16 @@ You can install all python dependencies:
 
 Furthermore, you need to copy the `config.example.yml` to `config.yml` and adjust the credentials for access.
 
-And finally run the main crawling script `python crawl_all.py` to download all available sources into the database.
+And finally run the main crawling script `python main.py` to download all available sources into the database.
+
+## CLI tool
+
+After installing the library with `pip install -e .`,
+there also is a CLI tool to download/update a given dataset using:
+
+`oeds --db="postgresql://opendata:opendata@localhost:6432/opendata?options=--search_path={DBNAME}" --crawler-list public opec smard`
+
+For more information, check out `oeds -h`.
 
 ## Using the ECMWF crawler
 

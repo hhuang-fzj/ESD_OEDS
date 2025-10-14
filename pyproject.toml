@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: Florian Maurer
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oeds"
+version = "0.0.1"
+description = "Open energy data server"
+authors = [{ name = "Florian Maurer", email = "maurer@fh-aachen.de"}]
+license = "AGPL-3.0-or-later"
+readme = "README.md"
+keywords = ["open data", "energy", "mobility"]
+
+classifiers=[
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy >=1.26.4",
+    "python-dateutil >=2.8.2",
+    "pandas >=2.0.0",
+    "pyyaml >=6.0.2",
+    "open-mastr >=0.15.0",
+]
+
+[project.scripts]
+oeds = "oeds.main:cli"
+
+[tool.setuptools]
+packages = ["oeds"]
