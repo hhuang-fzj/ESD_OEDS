@@ -37,12 +37,12 @@ log = logging.getLogger("ecmwf")
 
 # path of nuts file
 # downloaded from
-# https://ec.europa.eu/eurostat/de/web/gisco/geodata/reference-data/administrative-units-statistical-units/nuts#nuts21
+# https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics
 NUTS_PATH = Path(__file__).parent.parent / "shapes/NUTS_RG_01M_2021_4326.shp"
 TEMP_DIR = Path(__file__).parent.parent / "ecmwf_grb_files"
 
 # coords for europe according to:
-# https://cds.climate.copernicus.eu/toolbox/doc/how-to/1_how_to_retrieve_data/1_how_to_retrieve_data.html#retrieve-a-geographical-subset-and-change-the-default-resolution
+# https://web.archive.org/web/20240817225744/https://cds.climate.copernicus.eu/toolbox/doc/how-to/1_how_to_retrieve_data/1_how_to_retrieve_data.html#retrieve-a-geographical-subset-and-change-the-default-resolution
 coords = [75, -15, 30, 42.5]
 
 # requested weather variable
