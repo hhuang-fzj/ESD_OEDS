@@ -29,6 +29,16 @@ def load_config(config_path: Path | str = "config.yml") -> CrawlerConfig:
         config = yaml.safe_load(f)
     return config
 
+def empty_config() -> CrawlerConfig:
+    return {
+        "db_uri" : "",
+        "entsoe_api_key": "",
+        "gie_api_key": "",
+        "ipnt_client_id": "",
+        "ipnt_client_secret": "",
+        "jao_api_key": "",
+    }
+
 
 class BaseCrawler:
     def __init__(self, schema_name: str, config: CrawlerConfig):

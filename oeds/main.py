@@ -5,12 +5,15 @@
 import argparse
 import logging
 from pathlib import Path
+from typing import TypedDict
 
 from oeds.base_crawler import (
     BaseCrawler,
     ContinuousCrawler,
+    CrawlerConfig,
     DownloadOnceCrawler,
     load_config,
+    empty_config,
 )
 
 log = logging.getLogger("OEDS")
@@ -30,7 +33,6 @@ def cli(args=None):
         "--db",
         type=str,
         help="set the DB URI",
-        default="postgresql://opendata:opendata@localhost:6432/opendata?options=--search_path={DBNAME}",
     )
     parser.add_argument(
         "--crawler-list", nargs="*", help="List of crawlers to run (default: all)"
@@ -56,10 +58,11 @@ def cli(args=None):
     if parsed_args.config:
         config = load_config(parsed_args.config)
     else:
-        config = {}
+        config = empty_config()
 
     if parsed_args.db:
         config["db_uri"] = parsed_args.db
+    print(config["db_uri"])
 
     for crawler_name in selected_crawlers:
         log.info("Starting crawler: %s", crawler_name)
