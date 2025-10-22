@@ -359,7 +359,7 @@ class EcmwfCrawler(ContinuousCrawler):
         for request in request_list_from_dates(dates):
             log.info(f"The current request running: {request}")
             save_ecmwf_request_to_file(request, self.ecmwf_client)
-            build_dataframe(self.engine, request)
+            build_dataframe(self.engine, request, write_lat_lon=False)
 
 
 if __name__ == "__main__":
