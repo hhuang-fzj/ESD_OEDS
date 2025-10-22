@@ -4,8 +4,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import argparse
 import logging
+import pandas as pd
 from pathlib import Path
 from typing import TypedDict
+from datetime import date, datetime, timedelta
 
 from oeds.base_crawler import (
     BaseCrawler,
@@ -20,11 +22,11 @@ log = logging.getLogger("OEDS")
 log.setLevel(logging.INFO)
 
 
-def start_crawler(crawler: BaseCrawler):
+def start_crawler(crawler: BaseCrawler, begin: datetime, end: datetime):
     if isinstance(crawler, DownloadOnceCrawler):
         crawler.crawl_structural()
     if isinstance(crawler, ContinuousCrawler):
-        crawler.crawl_temporal()
+        crawler.crawl_temporal(begin, end)
 
 
 def cli(args=None):
@@ -82,4 +84,4 @@ if __name__ == "__main__":
     config = load_config(Path(__file__).parent.parent / "config.yml")
     for schema_name, crawler_class in crawlers.items():
         crawler = crawler_class(schema_name, config)
-        start_crawler(crawler)
+        start_crawler(crawler, begin=pd.Timestamp("20240101", tz="Europe/Berlin"), end=pd.Timestamp("20241231", tz="Europe/Berlin"))
