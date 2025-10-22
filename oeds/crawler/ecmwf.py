@@ -55,7 +55,8 @@ weather_variables = [
     "surface_net_solar_radiation",
 ]
 
-TEMPORAL_START = datetime(2022, 1, 1)
+TEMPORAL_START = datetime(2024, 1, 1)
+TEMPORAL_END = datetime(2024, 12, 31)
 
 
 def create_table(engine):
@@ -319,12 +320,13 @@ class EcmwfCrawler(ContinuousCrawler):
         self.create_single_hypertable_if_not_exists("ecmwf", "time")
         self.create_single_hypertable_if_not_exists("ecmwf_eu", "time")
 
-    def crawl_from_to(self, begin: datetime, end: datetime):
+    def crawl_from_to(self, begin: datetime, end: datetime, latest_data: bool=False):
         """Crawls data from begin (inclusive) until end (exclusive)
 
         Args:
             begin (datetime): included begin datetime from which to crawl
             end (datetime): exclusive end datetime until which to crawl
+            latest_data (bool, optional): whether to crawl latest data
         """
         if begin < TEMPORAL_START:
             begin = TEMPORAL_START
@@ -333,25 +335,26 @@ class EcmwfCrawler(ContinuousCrawler):
 
         if end > data_available_until:
             end = data_available_until
-
-        last_date = self.get_latest_data()
-        last_date += timedelta(hours=1)
+        dates = []
 
         # the requests are build from 00:00 - 23:00 for each day
         # however, for recent dates the cds API delivers data up until the latest hour of the day it can deliver
         # that is why a check is necessary to first make sure that the database has dates up until 23:00
-
-        if last_date.hour != 23:
-            log.info("Creating request for single day")
-            request = single_day_request(last_date)
-            log.info(f"The current request running: {request}")
-            save_ecmwf_request_to_file(request, self.ecmwf_client)
-            build_dataframe(self.engine, request)
+        if latest_data:
             last_date = self.get_latest_data()
-
-        dates = []
-        for single_date in daterange(last_date):
-            dates.append(single_date)
+            last_date += timedelta(hours=1)
+            if last_date.hour != 23:
+                log.info("Creating request for single day")
+                request = single_day_request(last_date)
+                log.info(f"The current request running: {request}")
+                save_ecmwf_request_to_file(request, self.ecmwf_client)
+                build_dataframe(self.engine, request)
+                last_date = self.get_latest_data()
+            for single_date in daterange(last_date):
+                dates.append(single_date)
+        else:
+            for single_date in daterange(begin, end):
+                dates.append(single_date)
 
         for request in request_list_from_dates(dates):
             log.info(f"The current request running: {request}")
@@ -365,4 +368,4 @@ if __name__ == "__main__":
 
     config = load_config(DEFAULT_CONFIG_LOCATION)
     smard = EcmwfCrawler("ecmwf", config=config)
-    smard.crawl_temporal()
+    smard.crawl_from_to(TEMPORAL_START, TEMPORAL_END)
