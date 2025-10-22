@@ -58,7 +58,7 @@ def read_stations():
                 response = requests.post(
                     PRICE_URL, data={"deviceId": station["device_id"]}
                 )
-                soup = BeautifulSoup(response.text)
+                soup = BeautifulSoup(response.text, features="lxml")
                 price_text = (
                     soup.get_text()
                     .strip()
