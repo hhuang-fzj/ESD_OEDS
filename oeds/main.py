@@ -5,6 +5,7 @@
 import argparse
 import logging
 import pandas as pd
+import sys
 from pathlib import Path
 from typing import TypedDict
 from datetime import date, datetime, timedelta
@@ -22,7 +23,7 @@ log = logging.getLogger("OEDS")
 log.setLevel(logging.INFO)
 
 
-def start_crawler(crawler: BaseCrawler, begin: datetime, end: datetime):
+def start_crawler(crawler: BaseCrawler, begin: datetime = None, end: datetime = None):
     if isinstance(crawler, DownloadOnceCrawler):
         crawler.crawl_structural()
     if isinstance(crawler, ContinuousCrawler):
@@ -81,7 +82,20 @@ if __name__ == "__main__":
     logging.basicConfig()
     from oeds.crawler import crawlers
 
+    #Set a time range for continues crawler, which does not have own crawl_temporal()
+    begin_continues_crawl = pd.Timestamp("20240101")
+    end_continues_crawl = pd.Timestamp("20241231")
+
+    #Check if the time range is time zone-naive for the continuous crawler, which does not have its own crawl_temporal()
+    if begin_continues_crawl.tz is not None :
+        sys.exit(f"❌ Error: Timestamp {begin_continues_crawl} is timezone-aware ({begin_continues_crawl.tz}). Please use a naive timestamp instead.")
+    elif end_continues_crawl.tz is not None:
+        sys.exit(f"❌ Error: Timestamp {end_continues_crawl} is timezone-aware ({end_continues_crawl.tz}). Please use a naive timestamp instead.")
+    else:
+        pass
+
+
     config = load_config(Path(__file__).parent.parent / "config.yml")
     for schema_name, crawler_class in crawlers.items():
         crawler = crawler_class(schema_name, config)
-        start_crawler(crawler, begin=pd.Timestamp("20240101", tz="Europe/Berlin"), end=pd.Timestamp("20241231", tz="Europe/Berlin"))
+        start_crawler(crawler, begin=begin_continues_crawl, end=end_continues_crawl)
