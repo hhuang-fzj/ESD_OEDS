@@ -82,7 +82,7 @@ if __name__ == "__main__":
     logging.basicConfig()
     from oeds.crawler import crawlers
 
-    #Set a time range for continues crawler, which does not have own crawl_temporal()
+    #Set a time range for continues crawler
     begin_continues_crawl = pd.Timestamp("20240101")
     end_continues_crawl = pd.Timestamp("20241231")
 
