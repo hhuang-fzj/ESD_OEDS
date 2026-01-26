@@ -81,8 +81,8 @@ class NutsCrawler(DownloadOnceCrawler):
         geo_information["nuts3"] = geo_information["nuts_id"]
 
         plz_list.columns = map(str.lower, plz_list.columns)
-        plz_list["nuts2"] = plz_list["nuts3"].str[:5]
-        plz_list["nuts1"] = plz_list["nuts3"].str[:4]
+        plz_list["nuts2"] = plz_list["nuts3"].str[:4]
+        plz_list["nuts1"] = plz_list["nuts3"].str[:3]
         plz_list.index.name = "code"
 
         # join geo on plz_list
